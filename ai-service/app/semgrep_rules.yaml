@@ -1,0 +1,148 @@
+rules:
+  # -------------------------------------------------------------
+  # JavaScript / TypeScript Security & Code Smell Rules
+  # -------------------------------------------------------------
+  - id: javascript-xss-dangerously-set-inner-html
+    languages: [javascript, typescript, tsx, jsx]
+    severity: ERROR
+    message: "Direct injection of unsanitized HTML via dangerouslySetInnerHTML exposes the application to Cross-Site Scripting (XSS)."
+    metadata:
+      category: Security
+      cwe: "CWE-79: Improper Neutralization of Input During Web Page Generation"
+      suggestion: "Sanitize markup with DOMPurify before passing to dangerouslySetInnerHTML."
+    patterns:
+      - pattern: "<$TAG ... dangerouslySetInnerHTML={{__html: $VAR}} ... />"
+
+  - id: javascript-insecure-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "Usage of eval() evaluates dynamic strings as code, leading to arbitrary code execution vulnerabilities."
+    metadata:
+      category: Security
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      suggestion: "Replace eval() with structured parsers like JSON.parse()."
+    patterns:
+      - pattern: "eval($CODE)"
+
+  - id: javascript-localstorage-token-storage
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "Sensitive authentication tokens stored in unencrypted browser localStorage are vulnerable to XSS exfiltration."
+    metadata:
+      category: Security
+      cwe: "CWE-922: Insecure Storage of Sensitive Information"
+      suggestion: "Store authentication tokens in HttpOnly, Secure, SameSite cookies or memory."
+    patterns:
+      - pattern-either:
+          - pattern: "localStorage.setItem(=~/.*(token|jwt|auth|secret).*/i, $VAL)"
+          - pattern: "sessionStorage.setItem(=~/.*(token|jwt|auth|secret).*/i, $VAL)"
+
+  - id: javascript-dynamic-sql-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "Dynamic SQL composition via string concatenation is vulnerable to SQL injection."
+    metadata:
+      category: Security
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      suggestion: "Use parameterized queries or ORM query builders."
+    patterns:
+      - pattern-either:
+          - pattern: "$DB.query(`... ${$VAL} ...`)"
+          - pattern: "$DB.query('...' + $VAL + '...')"
+          - pattern: "$DB.execute('...' + $VAL + '...')"
+
+  - id: javascript-legacy-var
+    languages: [javascript, typescript]
+    severity: INFO
+    message: "Use of legacy 'var' keyword introduces variable hoisting hazards."
+    metadata:
+      category: Code smell
+      suggestion: "Use block-scoped 'const' or 'let' keywords instead."
+    patterns:
+      - pattern: "var $NAME = $VAL;"
+
+  - id: javascript-loose-equality
+    languages: [javascript, typescript]
+    severity: INFO
+    message: "Loose equality comparison operator (==) can cause unexpected type coercions."
+    metadata:
+      category: Code smell
+      suggestion: "Use strict equality operator (===)."
+    patterns:
+      - pattern: "$A == $B"
+
+  # -------------------------------------------------------------
+  # Java Security & Code Smell Rules
+  # -------------------------------------------------------------
+  - id: java-dynamic-sql-injection
+    languages: [java]
+    severity: ERROR
+    message: "Building SQL statements via string concatenation is vulnerable to SQL injection."
+    metadata:
+      category: Security
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      suggestion: "Use parameterized queries or prepared statements."
+    patterns:
+      - pattern-either:
+          - pattern: "$STMT.executeQuery($QUERY + $VAL)"
+          - pattern: "$EM.createQuery($QUERY + $VAL)"
+
+  - id: java-insecure-deserialization
+    languages: [java]
+    severity: ERROR
+    message: "Insecure Java deserialization via ObjectInputStream.readObject() can lead to remote code execution."
+    metadata:
+      category: Security
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      suggestion: "Validate input streams using ObjectInputFilter or migrate to structured JSON formats."
+    patterns:
+      - pattern: "($OBJECTINPUTSTREAM : ObjectInputStream).readObject(...)"
+
+  - id: java-mutable-static-variable
+    languages: [java]
+    severity: WARNING
+    message: "Non-final mutable static class variable introduces concurrency and thread-safety risks."
+    metadata:
+      category: Code smell
+      suggestion: "Apply final modifier or encapsulate state in thread-safe instances."
+    patterns:
+      - pattern: "static $TYPE $VAR = $VAL;"
+
+  - id: java-stdout-in-production
+    languages: [java]
+    severity: INFO
+    message: "Direct System.out.println or printStackTrace usage in production code."
+    metadata:
+      category: Code smell
+      suggestion: "Replace with structured logger instance (e.g. SLF4J / Logback)."
+    patterns:
+      - pattern-either:
+          - pattern: "System.out.println(...)"
+          - pattern: "System.err.println(...)"
+          - pattern: "$E.printStackTrace()"
+
+  # -------------------------------------------------------------
+  # Go Security & Code Smell Rules
+  # -------------------------------------------------------------
+  - id: go-dynamic-sql-injection
+    languages: [go]
+    severity: ERROR
+    message: "Dynamic SQL query construction in Go using fmt.Sprintf or string concatenation allows SQL injection."
+    metadata:
+      category: Security
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      suggestion: "Pass query parameters directly to db.Query / db.Exec using placeholders."
+    patterns:
+      - pattern-either:
+          - pattern: "$DB.Query(fmt.Sprintf(...))"
+          - pattern: "$DB.Exec(fmt.Sprintf(...))"
+
+  - id: go-panic-in-library
+    languages: [go]
+    severity: WARNING
+    message: "Direct panic() invocation in Go application library."
+    metadata:
+      category: Code smell
+      suggestion: "Propagate errors gracefully using return (..., error)."
+    patterns:
+      - pattern: "panic($MSG)"
