@@ -23,6 +23,8 @@ from app.api.common import (
 from app.api.reports import router as reports_router
 from app.api.repositories import router as repositories_router
 from app.api.users import router as users_router
+from app.api.webhooks import router as webhooks_router
+from app.api.organizations import router as organizations_router
 from app.config import settings
 from app.database import initialize_database
 from app.jobs import check_redis_health
@@ -85,6 +87,8 @@ app.include_router(repositories_router, prefix="/api/repositories")
 app.include_router(analysis_router, prefix="/api/analysis")
 app.include_router(reports_router, prefix="/api/reports")
 app.include_router(ai_router, prefix="/api/ai")
+app.include_router(webhooks_router, prefix="/api/webhooks")
+app.include_router(organizations_router, prefix="/api/organizations")
 
 __all__ = [
     "app",

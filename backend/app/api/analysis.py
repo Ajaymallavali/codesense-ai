@@ -7,15 +7,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
 from app.api.common import analysis_response, finding_response
 from app.database import get_connection
+from app.dev_store import dev_store
 from app.jobs import dispatch_analysis_job
 from app.schemas import AnalysisResponse, FindingResponse, TriggerAnalysisRequest
 from app.security import get_current_user
 
 router = APIRouter(tags=["analysis"])
 logger = logging.getLogger(__name__)
-
-_DEV_ANALYSES: dict[str, dict[str, Any]] = {}
-_DEV_FINDINGS: dict[str, list[dict[str, Any]]] = {}
 
 
 @router.get("/sample")
@@ -55,7 +53,7 @@ def latest_analysis(
     except Exception as exc:
         logger.debug("Database unavailable for latest_analysis: %s", exc)
 
-    local = _DEV_ANALYSES.get(str(repositoryId))
+    local = dev_store.get_analyses().get(str(repositoryId))
     if local:
         return analysis_response(local)
 
@@ -72,7 +70,7 @@ def latest_analysis(
         "started_at": datetime.now(timezone.utc),
         "completed_at": datetime.now(timezone.utc),
     }
-    _DEV_ANALYSES[str(repositoryId)] = default_dev_analysis
+    dev_store.save_analysis(str(repositoryId), default_dev_analysis)
     return analysis_response(default_dev_analysis)
 
 
@@ -125,8 +123,7 @@ def trigger_analysis(
         "started_at": datetime.now(timezone.utc),
         "completed_at": datetime.now(timezone.utc),
     }
-    _DEV_ANALYSES[str(repo_id)] = dev_analysis
-    _DEV_FINDINGS[str(analysis_id)] = [
+    dev_findings = [
         {
             "id": uuid4(),
             "category": "Security",
@@ -146,6 +143,8 @@ def trigger_analysis(
             "line_number": 45,
         },
     ]
+    dev_store.save_analysis(str(repo_id), dev_analysis)
+    dev_store.save_findings(str(analysis_id), dev_findings)
     return analysis_response(dev_analysis)
 
 
@@ -172,7 +171,7 @@ def list_findings(
     except Exception as exc:
         logger.debug("Database unavailable for list_findings: %s", exc)
 
-    local_findings = _DEV_FINDINGS.get(str(analysis_id)) or [
+    local_findings = dev_store.get_findings().get(str(analysis_id)) or [
         {
             "id": uuid4(),
             "category": "Security",

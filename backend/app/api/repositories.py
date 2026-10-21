@@ -7,24 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.common import repository_response
 from app.database import get_connection
+from app.dev_store import dev_store
 from app.github_service import github_service
 from app.schemas import ImportRepositoryRequest, RepositoryResponse
 from app.security import get_current_user
 
 router = APIRouter(tags=["repositories"])
 logger = logging.getLogger(__name__)
-
-# Local in-memory dev storage when database is offline
-_DEV_REPOSITORIES: list[dict[str, Any]] = [
-    {
-        "id": "11111111-1111-1111-1111-111111111111",
-        "name": "TREND-TECH-2",
-        "full_name": "Ajaymallavali/TREND-TECH-2",
-        "default_branch": "main",
-        "language": "JavaScript",
-        "imported_at": datetime.now(timezone.utc),
-    }
-]
 
 
 @router.get("", response_model=list[RepositoryResponse])
@@ -44,7 +33,7 @@ def list_repositories(current_user: dict[str, Any] = Depends(get_current_user)) 
             return [repository_response(row) for row in rows]
     except Exception as exc:
         logger.debug("Database unavailable for list_repositories: %s", exc)
-        return [repository_response(r) for r in _DEV_REPOSITORIES]
+        return [repository_response(r) for r in dev_store.get_repositories()]
 
 
 @router.get("/github")
@@ -130,9 +119,9 @@ def import_repository(
             connection.commit()
             return repository_response(row)
     except Exception as exc:
-        logger.debug("Database unavailable for import_repository: %s; using local cache", exc)
-        for existing in _DEV_REPOSITORIES:
+        logger.debug("Database unavailable for import_repository: %s; using local persistent store", exc)
+        for existing in dev_store.get_repositories():
             if existing.get("full_name") == full_name or existing.get("name") == name:
                 return repository_response(existing)
-        _DEV_REPOSITORIES.insert(0, imported_row)
+        dev_store.save_repository(imported_row)
         return repository_response(imported_row)

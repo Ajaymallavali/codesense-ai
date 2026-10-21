@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import logging
 import urllib.parse
 from typing import Any
@@ -240,6 +242,81 @@ class GitHubService:
             logger.warning(f"Could not fetch branches for {cleaned_repo}: {exc}")
 
         return ["main", "develop", "feature/ai-review"]
+
+    @staticmethod
+    def verify_webhook_signature(payload_bytes: bytes, signature_header: str | None, secret: str) -> bool:
+        """
+        Verify GitHub X-Hub-Signature-256 HMAC SHA-256 signature.
+        """
+        if not secret:
+            # If no secret configured on server, accept payloads in dev
+            return True
+        if not signature_header or not signature_header.startswith("sha256="):
+            return False
+
+        expected_sig = "sha256=" + hmac.new(
+            secret.encode("utf-8"),
+            payload_bytes,
+            hashlib.sha256,
+        ).hexdigest()
+
+        return hmac.compare_digest(expected_sig, signature_header)
+
+    async def post_pr_review(
+        self,
+        repo_full_name: str,
+        pull_number: int,
+        body: str,
+        event: str = "COMMENT",  # 'APPROVE', 'REQUEST_CHANGES', 'COMMENT'
+        commit_sha: str | None = None,
+        comments: list[dict[str, Any]] | None = None,
+        access_token: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Post automated review comments directly back to the GitHub PR discussion via GitHub REST API.
+        Endpoint: POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+        """
+        cleaned_repo = repo_full_name.strip().strip("/")
+        token = access_token or settings.github_client_secret or "mock-token"
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "CodeSense-AI-Backend",
+        }
+        if token and token != "mock-token":
+            headers["Authorization"] = f"Bearer {token.strip()}"
+
+        url = f"{GITHUB_API_BASE}/repos/{cleaned_repo}/pulls/{pull_number}/reviews"
+        payload: dict[str, Any] = {
+            "body": body,
+            "event": event,
+        }
+        if commit_sha:
+            payload["commit_id"] = commit_sha
+        if comments:
+            # Format GitHub inline review comments: path, line, body
+            valid_comments = []
+            for c in comments:
+                if c.get("path") and c.get("line") and c.get("body"):
+                    valid_comments.append({
+                        "path": c["path"],
+                        "line": int(c["line"]),
+                        "body": c["body"],
+                    })
+            if valid_comments:
+                payload["comments"] = valid_comments
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(url, json=payload, headers=headers)
+                if res.is_success:
+                    logger.info(f"Successfully posted PR review to GitHub for PR #{pull_number} on {cleaned_repo}")
+                    return res.json()
+                else:
+                    logger.warning(f"GitHub post_pr_review returned HTTP {res.status_code}: {res.text}")
+                    return {"status": "error", "code": res.status_code, "detail": res.text}
+        except Exception as exc:
+            logger.error(f"Failed to post PR review to GitHub: {exc}")
+            return {"status": "error", "detail": str(exc)}
 
 
 github_service = GitHubService()

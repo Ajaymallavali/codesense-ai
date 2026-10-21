@@ -13,6 +13,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import settings
 from app.database import get_connection
+from app.dev_store import dev_store
 
 logger = logging.getLogger(__name__)
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -103,7 +104,11 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
             if user:
                 return user
     except Exception as exc:
-        logger.debug("Database user lookup failed: %s; falling back to token claims", exc)
+        logger.debug("Database user lookup failed: %s; falling back to dev_store / token claims", exc)
+
+    dev_user = dev_store.find_user_by_email(payload.get("sub", ""))
+    if dev_user:
+        return dev_user
 
     return {
         "id": payload.get("uid") or "00000000-0000-0000-0000-000000000001",

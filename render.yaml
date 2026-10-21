@@ -1,0 +1,79 @@
+services:
+  # 1. FastAPI Main Backend API
+  - type: web
+    name: codesense-backend
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: codesense-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: codesense-redis
+          property: connectionString
+      - key: AI_SERVICE_URL
+        fromService:
+          type: web
+          name: codesense-ai-service
+          property: host
+      - key: JWT_SECRET
+        generateValue: true
+
+  # 2. FastAPI AI Service
+  - type: web
+    name: codesense-ai-service
+    env: python
+    rootDir: ai-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false
+
+  # 3. Dedicated Background Queue Worker
+  - type: worker
+    name: codesense-worker
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.worker
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: codesense-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: codesense-redis
+          property: connectionString
+      - key: AI_SERVICE_URL
+        fromService:
+          type: web
+          name: codesense-ai-service
+          property: host
+
+  # 4. Redis Key-Value Store & Task Queue
+  - type: redis
+    name: codesense-redis
+    ipAllowList: []
+    plan: starter
+    maxmemoryPolicy: noeviction
+
+databases:
+  # 5. PostgreSQL Managed Database
+  - name: codesense-postgres
+    databaseName: codesense
+    user: codesense
+    plan: starter

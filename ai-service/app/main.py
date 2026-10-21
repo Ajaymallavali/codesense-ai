@@ -1,14 +1,20 @@
-import os
-import shutil
-import tempfile
-import zipfile
-import urllib.request
-import json
 import ast
+import json
+import logging
+import os
+from pathlib import Path
 import re
+import shutil
+import subprocess
+import tempfile
+import urllib.request
+import zipfile
 from typing import Any
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 try:
     from app.ast_scanner import TreeSitterScanner
@@ -159,13 +165,79 @@ def download_zipball(repo_full_name: str, branch: str, token: str | None, dest_p
     raise Exception("Too many redirects")
 
 
+class IncrementalRepoManager:
+    """
+    Manages local git clone cache to enable fast shallow clones and incremental diff scans.
+    Falls back gracefully to GitHub zipball when git is unavailable or private credentials expire.
+    """
+    def __init__(self, cache_root: str | None = None):
+        self.cache_root = Path(cache_root or tempfile.gettempdir()) / "codesense_git_cache"
+        self.cache_root.mkdir(parents=True, exist_ok=True)
+        self._analysis_cache: dict[str, Any] = {}
+
+    def get_repo_dir(self, repo_name: str) -> Path:
+        safe_name = repo_name.replace("/", "_").replace("\\", "_")
+        return self.cache_root / safe_name
+
+    def fetch_or_clone(self, repo_name: str, branch: str, token: str | None) -> tuple[Path, str, list[str]]:
+        """
+        Returns: (repo_dir, commit_sha, changed_files)
+        """
+        repo_dir = self.get_repo_dir(repo_name)
+        clone_url = f"https://github.com/{repo_name}.git"
+        if token and token.strip() and token.strip() != "mock-token":
+            clone_url = f"https://x-access-token:{token.strip()}@github.com/{repo_name}.git"
+
+        # Check if already cloned
+        if (repo_dir / ".git").exists():
+            try:
+                # Fetch newest commits shallowly
+                fetch_cmd = ["git", "-C", str(repo_dir), "fetch", "origin", branch, "--depth", "2"]
+                subprocess.run(fetch_cmd, capture_output=True, timeout=20, check=True)
+
+                checkout_cmd = ["git", "-C", str(repo_dir), "checkout", "-f", "FETCH_HEAD"]
+                subprocess.run(checkout_cmd, capture_output=True, timeout=10, check=True)
+
+                sha_res = subprocess.run(["git", "-C", str(repo_dir), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5)
+                commit_sha = sha_res.stdout.strip() if sha_res.returncode == 0 else ""
+
+                diff_res = subprocess.run(["git", "-C", str(repo_dir), "diff", "--name-only", "HEAD~1", "HEAD"], capture_output=True, text=True, timeout=5)
+                changed_files = [line.strip() for line in diff_res.stdout.splitlines() if line.strip()] if diff_res.returncode == 0 else []
+
+                return repo_dir, commit_sha, changed_files
+            except Exception as exc:
+                logger.warning(f"Incremental git fetch failed for {repo_name}: {exc}; re-cloning")
+                shutil.rmtree(repo_dir, ignore_errors=True)
+
+        # Fresh shallow clone
+        try:
+            clone_cmd = ["git", "clone", "--depth", "1", "--branch", branch, clone_url, str(repo_dir)]
+            subprocess.run(clone_cmd, capture_output=True, timeout=30, check=True)
+
+            sha_res = subprocess.run(["git", "-C", str(repo_dir), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5)
+            commit_sha = sha_res.stdout.strip() if sha_res.returncode == 0 else ""
+            return repo_dir, commit_sha, []
+        except Exception as exc:
+            logger.info(f"Git shallow clone not available for {repo_name}: {exc}; using zipball fallback")
+            raise exc
+
+
+repo_cache_manager = IncrementalRepoManager()
+
+
 def calculate_cognitive_complexity(lines: list[str], ext: str) -> int:
     complexity = 1  # Base complexity
     ext = ext.lower()
     if ext == '.py':
         keywords = ['if ', 'elif ', 'for ', 'while ', 'except ', 'and ', 'or ']
-    elif ext in ('.java', '.js', '.jsx', '.ts', '.tsx', '.cs', '.cpp'):
+    elif ext in ('.java', '.js', '.jsx', '.ts', '.tsx', '.cs', '.cpp', '.c', '.h', '.hpp'):
         keywords = ['if ', 'if(', 'for ', 'for(', 'while ', 'while(', 'catch ', 'catch(', '&&', '||', 'case ']
+    elif ext in ('.go',):
+        keywords = ['if ', 'for ', 'select ', 'switch ', 'case ', '&&', '||']
+    elif ext in ('.rs',):
+        keywords = ['if ', 'match ', 'for ', 'while ', 'loop ', '&&', '||']
+    elif ext in ('.php',):
+        keywords = ['if ', 'for ', 'foreach ', 'while ', 'catch ', 'case ', '&&', '||']
     else:
         keywords = []
 
@@ -745,7 +817,7 @@ def scan_source_file(rel_path: str, content: str, ext: str) -> tuple[list[dict],
                 "suggestion": af["suggestion"],
                 "line_number": af["line_number"],
             })
-    elif ext in (".js", ".jsx", ".ts", ".tsx", ".java", ".go"):
+    elif ext in (".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rs", ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".php"):
         # First, run high-precision Tree-Sitter AST scanning
         if TreeSitterScanner and TreeSitterScanner.is_available():
             ts_findings = TreeSitterScanner.scan_code(rel_path, content, ext)
@@ -756,8 +828,10 @@ def scan_source_file(rel_path: str, content: str, ext: str) -> tuple[list[dict],
             extra = scan_javascript_typescript(rel_path, content, lines, ext)
         elif ext == ".java":
             extra = scan_java_source(rel_path, content, lines)
-        else:
+        elif ext == ".go":
             extra = scan_go_source(rel_path, content, lines)
+        else:
+            extra = []
 
         # Deduplicate by line number and title
         seen_keys = {(f["line_number"], f["title"]) for f in findings}
@@ -892,26 +966,34 @@ def analyze_repository(payload: AnalyzeRepositoryRequest) -> AnalyzeRepositoryRe
         )
 
     temp_dir = tempfile.mkdtemp()
-    zip_path = os.path.join(temp_dir, "repo.zip")
-    extract_dir = os.path.join(temp_dir, "extracted")
-
     findings = []
     technical_debt_hours = 0
+    root_dir = None
+    use_temp = True
 
     try:
-        download_zipball(repo_name, branch, token, zip_path)
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_dir)
+        # 1. Try fast incremental git shallow clone/fetch
+        try:
+            cached_dir, commit_sha, _ = repo_cache_manager.fetch_or_clone(repo_name, branch, token)
+            root_dir = str(cached_dir)
+            use_temp = False
+            logger.info(f"Using incremental git cache for {repo_name} at {cached_dir}")
+        except Exception as git_err:
+            logger.info(f"Incremental git cache not active for {repo_name}: {git_err}; falling back to zipball")
+            zip_path = os.path.join(temp_dir, "repo.zip")
+            extract_dir = os.path.join(temp_dir, "extracted")
+            download_zipball(repo_name, branch, token, zip_path)
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
 
-        root_dir = None
-        for item in os.listdir(extract_dir):
-            item_path = os.path.join(extract_dir, item)
-            if os.path.isdir(item_path):
-                root_dir = item_path
-                break
+            for item in os.listdir(extract_dir):
+                item_path = os.path.join(extract_dir, item)
+                if os.path.isdir(item_path):
+                    root_dir = item_path
+                    break
 
-        if not root_dir:
-            root_dir = extract_dir
+            if not root_dir:
+                root_dir = extract_dir
 
         code_files = []
         frameworks = []
@@ -1020,10 +1102,12 @@ def analyze_repository(payload: AnalyzeRepositoryRequest) -> AnalyzeRepositoryRe
             technical_debt_hours = 2
 
     except Exception as e:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        if use_temp:
+            shutil.rmtree(temp_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Analysis engine failed: {str(e)}")
 
-    shutil.rmtree(temp_dir, ignore_errors=True)
+    if use_temp:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     return AnalyzeRepositoryResponse(
         repository=repo_name,

@@ -13,6 +13,10 @@ try:
         "tsx": tree_sitter_languages.get_parser("tsx"),
         "java": tree_sitter_languages.get_parser("java"),
         "go": tree_sitter_languages.get_parser("go"),
+        "rust": tree_sitter_languages.get_parser("rust"),
+        "c": tree_sitter_languages.get_parser("c"),
+        "cpp": tree_sitter_languages.get_parser("cpp"),
+        "php": tree_sitter_languages.get_parser("php"),
     }
 except Exception:
     HAS_TREE_SITTER = False
@@ -341,8 +345,186 @@ def _scan_go_ast(root_node: Any, rel_path: str, code_bytes: bytes) -> list[dict]
     return findings
 
 
+def _scan_rust_ast(root_node: Any, rel_path: str, code_bytes: bytes) -> list[dict]:
+    findings: list[dict] = []
+
+    def visitor(node: Any) -> None:
+        ntype = node.type
+        line_no = node.start_point[0] + 1
+
+        # 1. Unsafe block in Rust
+        if ntype == "unsafe_block":
+            findings.append({
+                "category": "Security",
+                "file": rel_path,
+                "title": "Unsafe block detected in Rust code",
+                "severity": "Medium",
+                "suggestion": "Unsafe blocks bypass Rust's memory safety guarantees. Document safety invariants and isolate within minimal private helper abstractions.",
+                "line_number": line_no,
+            })
+
+        # 2. Call expressions: unwrap(), expect(), panic!
+        if ntype == "call_expression":
+            fn_node = node.child_by_field_name("function")
+            fn_text = fn_node.text.decode("utf-8", errors="ignore") if fn_node else ""
+
+            if fn_text.endswith(".unwrap") and not rel_path.endswith("_test.rs") and "tests/" not in rel_path:
+                findings.append({
+                    "category": "Code smell",
+                    "file": rel_path,
+                    "title": "Unhandled unwrap() call on Result or Option",
+                    "severity": "Medium",
+                    "suggestion": "Calling .unwrap() in production code risks panicking the thread on None or Err. Use the '?' operator or handle with match/if let.",
+                    "line_number": line_no,
+                })
+            elif fn_text.endswith(".expect") and not rel_path.endswith("_test.rs") and "tests/" not in rel_path:
+                findings.append({
+                    "category": "Code smell",
+                    "file": rel_path,
+                    "title": "Direct .expect() panic invocation in production code",
+                    "severity": "Low",
+                    "suggestion": "Prefer propagating errors using Result<T, E> rather than panicking with .expect() in library code.",
+                    "line_number": line_no,
+                })
+
+        # 3. Macro invocations: panic!
+        if ntype == "macro_invocation":
+            macro_name = node.child_by_field_name("macro")
+            name_text = macro_name.text.decode("utf-8", errors="ignore") if macro_name else ""
+            if name_text == "panic" and not rel_path.endswith("_test.rs") and "tests/" not in rel_path:
+                findings.append({
+                    "category": "Code smell",
+                    "file": rel_path,
+                    "title": "Direct panic! macro invocation in production path",
+                    "severity": "Medium",
+                    "suggestion": "Avoid panicking across module boundaries. Return custom enum errors implementing std::error::Error.",
+                    "line_number": line_no,
+                })
+
+        for child in node.children:
+            visitor(child)
+
+    visitor(root_node)
+    return findings
+
+
+def _scan_c_cpp_ast(root_node: Any, rel_path: str, code_bytes: bytes) -> list[dict]:
+    findings: list[dict] = []
+    banned_funcs = {
+        "gets": ("High", "gets() does not check buffer boundaries and was removed from C11. Use fgets() or safer alternatives."),
+        "strcpy": ("High", "strcpy() is vulnerable to buffer overflow. Use strncpy(), strlcpy(), or std::string."),
+        "strcat": ("High", "strcat() does not bound string concatenation. Use strncat() or std::string."),
+        "sprintf": ("Medium", "sprintf() may overflow destination buffers. Use snprintf() with explicit buffer sizes."),
+        "vsprintf": ("Medium", "vsprintf() lacks destination buffer bounds. Use vsnprintf() instead."),
+    }
+
+    def visitor(node: Any) -> None:
+        ntype = node.type
+        line_no = node.start_point[0] + 1
+
+        if ntype == "call_expression":
+            fn_node = node.child_by_field_name("function")
+            fn_text = fn_node.text.decode("utf-8", errors="ignore") if fn_node else ""
+
+            if fn_text in banned_funcs:
+                sev, sug = banned_funcs[fn_text]
+                findings.append({
+                    "category": "Security",
+                    "file": rel_path,
+                    "title": f"Buffer overflow risk via banned C function '{fn_text}()'",
+                    "severity": sev,
+                    "suggestion": sug,
+                    "line_number": line_no,
+                })
+            elif fn_text == "system":
+                findings.append({
+                    "category": "Security",
+                    "file": rel_path,
+                    "title": "Command injection vulnerability via system() call",
+                    "severity": "High",
+                    "suggestion": "system() executes arbitrary shell commands through /bin/sh. Use execvp() or posix_spawn() with explicit argument vectors.",
+                    "line_number": line_no,
+                })
+
+        # Goto statements in C/C++
+        if ntype == "goto_statement":
+            findings.append({
+                "category": "Code smell",
+                "file": rel_path,
+                "title": "Unstructured goto statement detected",
+                "severity": "Low",
+                "suggestion": "Avoid unstructured goto jumps. Refactor with structured loop breaks, returns, or RAII cleanups.",
+                "line_number": line_no,
+            })
+
+        for child in node.children:
+            visitor(child)
+
+    visitor(root_node)
+    return findings
+
+
+def _scan_php_ast(root_node: Any, rel_path: str, code_bytes: bytes) -> list[dict]:
+    findings: list[dict] = []
+
+    def visitor(node: Any) -> None:
+        ntype = node.type
+        line_no = node.start_point[0] + 1
+        node_text = node.text.decode("utf-8", errors="ignore")
+
+        # 1. Eval & Command execution in PHP
+        if ntype in ("function_call_expression", "scoped_call_expression", "call_expression"):
+            fn_text = node_text.split("(")[0].strip().lower()
+
+            if "eval" in fn_text:
+                findings.append({
+                    "category": "Security",
+                    "file": rel_path,
+                    "title": "Dangerous dynamic code execution via eval() in PHP",
+                    "severity": "High",
+                    "suggestion": "eval() allows arbitrary code execution. Refactor using structured parser logic.",
+                    "line_number": line_no,
+                })
+            elif fn_text in ("system", "exec", "passthru", "shell_exec", "popen", "proc_open"):
+                findings.append({
+                    "category": "Security",
+                    "file": rel_path,
+                    "title": f"Potential command injection risk via '{fn_text}()'",
+                    "severity": "High",
+                    "suggestion": "Shell command execution with dynamic parameters must be sanitized using escapeshellcmd() and escapeshellarg().",
+                    "line_number": line_no,
+                })
+            elif fn_text in ("md5", "sha1"):
+                findings.append({
+                    "category": "Security",
+                    "file": rel_path,
+                    "title": f"Weak hashing algorithm '{fn_text}()' in PHP",
+                    "severity": "Medium",
+                    "suggestion": "md5 and sha1 are cryptographically broken for security. Use password_hash() with PASSWORD_DEFAULT / Argon2id.",
+                    "line_number": line_no,
+                })
+
+        # 2. Superglobals injection
+        if any(sg in node_text for sg in ("$_GET", "$_POST", "$_REQUEST", "$_COOKIE")):
+            if any(k in node_text.lower() for k in ("query(", "execute(", "mysql_query", "mysqli_query")):
+                findings.append({
+                    "category": "Security",
+                    "file": rel_path,
+                    "title": "SQL Injection vector with direct PHP superglobal composition",
+                    "severity": "High",
+                    "suggestion": "Never concatenate raw $_GET/$_POST into SQL queries. Use PDO prepared statements with parameter binding.",
+                    "line_number": line_no,
+                })
+
+        for child in node.children:
+            visitor(child)
+
+    visitor(root_node)
+    return findings
+
+
 class TreeSitterScanner:
-    """Production Tree-Sitter AST Scanner for JavaScript, TypeScript, Java, and Go."""
+    """Production Tree-Sitter AST Scanner for JavaScript, TypeScript, Java, Go, Rust, C/C++, and PHP."""
 
     @staticmethod
     def is_available() -> bool:
@@ -382,6 +564,14 @@ class TreeSitterScanner:
             parser = _PARSERS.get("java")
         elif ext_clean == "go":
             parser = _PARSERS.get("go")
+        elif ext_clean in ("rs", "rust"):
+            parser = _PARSERS.get("rust")
+        elif ext_clean in ("c", "h"):
+            parser = _PARSERS.get("c")
+        elif ext_clean in ("cpp", "cc", "cxx", "hpp"):
+            parser = _PARSERS.get("cpp")
+        elif ext_clean == "php":
+            parser = _PARSERS.get("php")
 
         if not parser:
             return findings
@@ -397,6 +587,12 @@ class TreeSitterScanner:
                 ast_findings = _scan_java_ast(root, rel_path, code_bytes)
             elif ext_clean == "go":
                 ast_findings = _scan_go_ast(root, rel_path, code_bytes)
+            elif ext_clean in ("rs", "rust"):
+                ast_findings = _scan_rust_ast(root, rel_path, code_bytes)
+            elif ext_clean in ("c", "h", "cpp", "cc", "cxx", "hpp"):
+                ast_findings = _scan_c_cpp_ast(root, rel_path, code_bytes)
+            elif ext_clean == "php":
+                ast_findings = _scan_php_ast(root, rel_path, code_bytes)
             else:
                 ast_findings = []
 

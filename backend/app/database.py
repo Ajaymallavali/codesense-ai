@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 @contextmanager
 def get_connection() -> Iterator[psycopg.Connection]:
-    with psycopg.connect(settings.database_url, row_factory=dict_row) as connection:
+    with psycopg.connect(settings.database_url, connect_timeout=2, row_factory=dict_row) as connection:
         yield connection
 
 
@@ -74,6 +74,23 @@ def initialize_database() -> None:
           title TEXT NOT NULL,
           suggestion TEXT,
           line_number INTEGER
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS organizations (
+          id UUID PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          slug VARCHAR(255) NOT NULL UNIQUE,
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS organization_members (
+          id UUID PRIMARY KEY,
+          organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          role VARCHAR(50) NOT NULL DEFAULT 'MEMBER',
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
         )
         """,
     ]

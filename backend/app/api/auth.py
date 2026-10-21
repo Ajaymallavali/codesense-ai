@@ -11,6 +11,7 @@ from psycopg.errors import UniqueViolation
 from app.api.common import auth_response, user_response
 from app.config import settings
 from app.database import get_connection
+from app.dev_store import dev_store
 from app.github_service import github_service, GitHubServiceError
 from app.oauth import verify_google_id_token, GoogleVerificationError
 from app.schemas import (
@@ -49,13 +50,19 @@ def register(payload: RegisterRequest) -> AuthResponse:
     except Exception as exc:
         logger.debug("Database unavailable for register: %s; using dev user creation", exc)
 
+    existing_user = dev_store.find_user_by_email(email)
+    if existing_user:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered")
+
     dev_user = {
         "id": user_id,
         "email": email,
         "display_name": payload.displayName.strip(),
+        "password_hash": hash_password(payload.password),
         "github_username": "Ajaymallavali",
         "created_at": datetime.now(timezone.utc),
     }
+    dev_store.save_user(dev_user)
     return auth_response(dev_user)
 
 
@@ -76,16 +83,23 @@ def login(payload: LoginRequest) -> AuthResponse:
     except Exception as exc:
         logger.debug("Database login query failed: %s; using dev authentication", exc)
 
-    # In dev or standalone mode, allow ajay@example.com / codesense123 or any user
+    # Check local dev_store first
+    dev_user = dev_store.find_user_by_email(payload.email.lower())
+    if dev_user and dev_user.get("password_hash"):
+        if verify_password(payload.password, dev_user["password_hash"]):
+            return auth_response(dev_user)
+
+    # In dev or standalone mode, allow ajay@example.com / codesense123 or standard demo user
     if payload.email.lower() == "ajay@example.com" or settings.environment == "development":
         dev_user = {
             "id": uuid4(),
             "email": payload.email.lower(),
             "display_name": "Ajay Kumar",
             "github_username": "Ajaymallavali",
-            "password_hash": "",
+            "password_hash": hash_password(payload.password),
             "created_at": datetime.now(timezone.utc),
         }
+        dev_store.save_user(dev_user)
         return auth_response(dev_user)
 
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
@@ -118,13 +132,16 @@ async def google_login(payload: GoogleAuthRequest) -> AuthResponse:
     except Exception as exc:
         logger.debug("Database unavailable for google_login: %s; using dev Google user", exc)
 
-    dev_user = {
+    existing = dev_store.find_user_by_email(email)
+    dev_user = existing or {
         "id": uuid4(),
         "email": email,
         "display_name": display_name,
         "github_username": "Ajaymallavali",
+        "password_hash": hash_password(uuid4().hex),
         "created_at": datetime.now(timezone.utc),
     }
+    dev_store.save_user(dev_user)
     return auth_response(dev_user)
 
 

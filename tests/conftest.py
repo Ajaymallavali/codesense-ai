@@ -24,6 +24,12 @@ ai_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ai_module)
 ai_service_app = ai_module.app
 
+ast_scanner_path = ROOT / "ai-service" / "app" / "ast_scanner.py"
+ast_spec = importlib.util.spec_from_file_location("ai_service_ast_scanner", str(ast_scanner_path))
+ast_module = importlib.util.module_from_spec(ast_spec)
+ast_spec.loader.exec_module(ast_module)
+TreeSitterScanner = ast_module.TreeSitterScanner
+
 
 @pytest.fixture
 def test_user():

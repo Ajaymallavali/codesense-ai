@@ -36,3 +36,5 @@ __pycache__/
 # Docker and reports
 reports/
 tmp/
+*dev_store.json
+*codesense_git_cache/

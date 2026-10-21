@@ -142,7 +142,86 @@ rules:
     severity: WARNING
     message: "Direct panic() invocation in Go application library."
     metadata:
-      category: Code smell
-      suggestion: "Propagate errors gracefully using return (..., error)."
+        category: Code smell
+        suggestion: "Propagate errors gracefully using return (..., error)."
     patterns:
       - pattern: "panic($MSG)"
+
+  # -------------------------------------------------------------
+  # Rust Security & Code Smell Rules
+  # -------------------------------------------------------------
+  - id: rust-unsafe-block
+    languages: [rust]
+    severity: WARNING
+    message: "Use of unsafe block bypasses Rust memory safety invariants."
+    metadata:
+      category: Security
+      cwe: "CWE-119: Memory Safety Violation"
+      suggestion: "Document safety invariants and minimize unsafe surface area."
+    patterns:
+      - pattern: "unsafe { ... }"
+
+  - id: rust-unhandled-unwrap
+    languages: [rust]
+    severity: WARNING
+    message: "Calling .unwrap() on Result/Option will panic if None or Err."
+    metadata:
+      category: Code smell
+      suggestion: "Use the '?' operator or handle errors with match/if let."
+    patterns:
+      - pattern: "$EXPR.unwrap()"
+
+  # -------------------------------------------------------------
+  # C / C++ Security & Code Smell Rules
+  # -------------------------------------------------------------
+  - id: c-buffer-overflow-banned-functions
+    languages: [c, cpp]
+    severity: ERROR
+    message: "Use of inherently unsafe C string function prone to buffer overflow."
+    metadata:
+      category: Security
+      cwe: "CWE-120: Classic Buffer Overflow"
+      suggestion: "Replace gets, strcpy, strcat with bounded snprintf or strncpy."
+    patterns:
+      - pattern-either:
+          - pattern: "gets($BUF)"
+          - pattern: "strcpy($DEST, $SRC)"
+          - pattern: "strcat($DEST, $SRC)"
+
+  - id: c-command-injection-system
+    languages: [c, cpp]
+    severity: ERROR
+    message: "Insecure system() call executes commands via subshell."
+    metadata:
+      category: Security
+      cwe: "CWE-78: OS Command Injection"
+      suggestion: "Use execvp() or posix_spawn() with explicit argument lists."
+    patterns:
+      - pattern: "system($CMD)"
+
+  # -------------------------------------------------------------
+  # PHP Security & Code Smell Rules
+  # -------------------------------------------------------------
+  - id: php-dynamic-eval
+    languages: [php]
+    severity: ERROR
+    message: "eval() allows execution of arbitrary PHP code."
+    metadata:
+      category: Security
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      suggestion: "Refactor dynamic evaluation using typed mapping or JSON parser."
+    patterns:
+      - pattern: "eval($CODE)"
+
+  - id: php-weak-hash
+    languages: [php]
+    severity: WARNING
+    message: "Weak legacy hashing algorithm used."
+    metadata:
+      category: Security
+      cwe: "CWE-328: Use of Weak Hash"
+      suggestion: "Use password_hash() with PASSWORD_DEFAULT instead of md5/sha1."
+    patterns:
+      - pattern-either:
+          - pattern: "md5($INPUT)"
+          - pattern: "sha1($INPUT)"
