@@ -44,12 +44,20 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
   const [isGithubLoading, setIsGithubLoading] = useState(false);
   const [gsiInitialized, setGsiInitialized] = useState(false);
 
-  const googleClientId =
-    import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-    "1234567890-mockclientid.apps.googleusercontent.com";
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+  const isRealGoogleConfigured = Boolean(
+    googleClientId &&
+    googleClientId.trim() !== "" &&
+    !googleClientId.includes("mock") &&
+    googleClientId.includes(".apps.googleusercontent.com")
+  );
 
-  // Load Google Identity Services (GSI) script dynamically
+  // Load Google Identity Services (GSI) script ONLY if a real Google Client ID is configured
   useEffect(() => {
+    if (!isRealGoogleConfigured) {
+      return;
+    }
+
     let script = document.getElementById("google-gsi-script") as HTMLScriptElement | null;
 
     const initGsi = () => {
@@ -97,7 +105,7 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
     } else {
       initGsi();
     }
-  }, [googleClientId, mode]);
+  }, [googleClientId, isRealGoogleConfigured, mode]);
 
   // Handle GitHub OAuth Redirect
   async function handleGithubLogin() {
@@ -138,18 +146,18 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
       </div>
 
       <div className="space-y-2">
-        {/* Real Google GSI Container */}
-        <div className="flex justify-center w-full min-h-[40px]">
-          <div ref={googleBtnRef} className="w-full flex justify-center" />
-        </div>
-
-        {/* Fallback button if GSI is loading or blocked by adblock */}
-        {!gsiInitialized && (
+        {/* If Real Google is configured, render official Google GSI Button */}
+        {isRealGoogleConfigured ? (
+          <div className="flex justify-center w-full min-h-[40px]">
+            <div ref={googleBtnRef} className="w-full flex justify-center" />
+          </div>
+        ) : (
+          /* Instant 1-click Google Sign-in for local dev */
           <button
             type="button"
             onClick={handleDevGoogleMockLogin}
             disabled={isGoogleLoading}
-            className="w-full flex items-center justify-center gap-2 rounded border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-sm"
+            className="w-full flex items-center justify-center gap-2 rounded border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-sm"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24">
               <path
