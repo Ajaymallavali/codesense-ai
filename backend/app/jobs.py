@@ -118,13 +118,21 @@ async def process_analysis_job(analysis_id: UUID) -> None:
     if not row:
         # Check dev_store for repo and analysis
         repos = dev_store.get_repositories()
-        repo = repos[0] if repos else {"name": "TREND-TECH-2", "full_name": "Ajaymallavali/TREND-TECH-2", "default_branch": "main"}
+        repo = None
+        for r_id, an in dev_store.get_analyses().items():
+            if str(an.get("id")) == str_id or str(r_id) == str_id:
+                repo = next((r for r in repos if str(r.get("id")) == str(an.get("repository_id", r_id))), None)
+                break
+        if not repo and repos:
+            repo = repos[0]
+        if not repo:
+            repo = {"name": "Raghuram_portfolio", "full_name": "Ajaymallavali/Raghuram_portfolio", "default_branch": "main"}
         row = {
             "id": analysis_id,
             "repository_id": repo.get("id"),
             "branch": repo.get("default_branch", "main"),
-            "name": repo.get("name", "TREND-TECH-2"),
-            "full_name": repo.get("full_name", "Ajaymallavali/TREND-TECH-2"),
+            "name": repo.get("name", "Raghuram_portfolio"),
+            "full_name": repo.get("full_name", "Ajaymallavali/Raghuram_portfolio"),
             "default_branch": repo.get("default_branch", "main"),
             "github_token": None,
             "status": "SCANNING",
