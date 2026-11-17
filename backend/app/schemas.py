@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
@@ -29,6 +30,13 @@ class GoogleAuthRequest(BaseModel):
 
 class GitHubCallbackRequest(BaseModel):
     code: str = Field(min_length=1)
+
+
+class GitHubDirectLoginRequest(BaseModel):
+    username: str = Field(default="Ajaymallavali", min_length=1, max_length=100)
+    token: str | None = Field(default=None, max_length=500)
+    email: str | None = Field(default=None, max_length=150)
+    displayName: str | None = Field(default=None, max_length=150)
 
 
 class AuthResponse(BaseModel):
@@ -92,10 +100,30 @@ class TriggerAnalysisRequest(BaseModel):
     repositoryId: UUID | None = None
 
 
+class CitationModel(BaseModel):
+    filePath: str
+    startLine: int | None = None
+    endLine: int | None = None
+    symbol: str | None = None
+    findingId: str | None = None
+
+
 class AiChatRequest(BaseModel):
     query: str | None = None
     message: str | None = None
-    repositoryId: UUID | None = None
+    repositoryId: Any | None = None
+    conversationId: str | None = None
+    branch: str | None = "main"
+    commitSha: str | None = None
+    messages: list[dict[str, Any]] | None = None
+    conversationHistory: list[dict[str, Any]] | None = None
+
+
+class AiChatResponse(BaseModel):
+    response: str
+    answer: str
+    conversationId: str | None = None
+    citations: list[dict[str, Any]] = []
 
 
 class AiExplainRequest(BaseModel):

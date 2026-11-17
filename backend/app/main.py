@@ -45,6 +45,7 @@ app = FastAPI(title=settings.app_name, version="0.2.0", root_path="", lifespan=l
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=r"^https://([a-zA-Z0-9_-]+\.)?(pages\.dev|vercel\.app|onrender\.com)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

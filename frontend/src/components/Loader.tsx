@@ -15,9 +15,9 @@ export function Loader({ message, size = "md", className = "" }: LoaderProps) {
   };
 
   return (
-    <div className={`flex flex-col items-center justify-center gap-2 p-6 text-slate-500 ${className}`}>
-      <Loader2 className="animate-spin text-teal-700" size={pixelSizes[size]} />
-      {message && <p className="text-xs font-medium text-slate-600">{message}</p>}
+    <div className={`flex flex-col items-center justify-center gap-2 p-6 text-slate-400 ${className}`}>
+      <Loader2 className="animate-spin text-emerald-400" size={pixelSizes[size]} />
+      {message && <p className="text-xs font-medium text-emerald-300/90 animate-pulse">{message}</p>}
     </div>
   );
 }

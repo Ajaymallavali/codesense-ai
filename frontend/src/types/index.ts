@@ -101,7 +101,19 @@ export type ReportSummary = {
   findings: Finding[];
 };
 
+export type Citation = {
+  filePath: string;
+  startLine?: number | null;
+  endLine?: number | null;
+  symbol?: string | null;
+  findingId?: string | null;
+};
+
 export type ChatMessage = {
   role: "user" | "assistant";
   text: string;
+  citations?: Citation[];
+  timestamp?: string;
+  hasReportAction?: boolean;
+  reportSummary?: ReportSummary;
 };

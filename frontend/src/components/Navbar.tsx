@@ -1,5 +1,5 @@
 import React from "react";
-import { FileText, GitBranch, LogOut } from "lucide-react";
+import { FileText, GitBranch, LogOut, User as UserIcon } from "lucide-react";
 import { User } from "../types";
 import { Button } from "./Button";
 
@@ -28,7 +28,7 @@ export function Navbar({
       subtitle: "Connect and manage your imported repositories and branches",
     },
     review: {
-      title: "Gemini AI Review Engine",
+      title: "Qwen3-Coder AI Review Engine",
       subtitle: "AST-enriched code review, targeted remediations, and automated PR reviews",
     },
     reports: {
@@ -47,24 +47,27 @@ export function Navbar({
   };
 
   return (
-    <header className="border-b border-slate-200 bg-white px-5 py-4 sm:px-8">
+    <header className="border-b border-[#172235] bg-[#0a0e18]/90 backdrop-blur-md px-5 py-4 sm:px-8 sticky top-0 z-20">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs text-slate-500 font-medium">
-            Signed in as <span className="font-semibold text-slate-700">{user.displayName}</span>
+          <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+            <UserIcon size={13} className="text-emerald-400 transition-transform hover:scale-125" />
+            <span>Signed in as <span className="font-semibold text-slate-200">{user.displayName}</span></span>
             {user.githubUsername && (
-              <span className="ml-1 text-[11px] rounded bg-slate-100 px-1.5 py-0.5 text-slate-600 font-mono">
+              <span className="text-[11px] rounded bg-emerald-950/60 border border-emerald-500/30 px-1.5 py-0.5 text-emerald-300 font-mono transition-transform duration-200 hover:scale-105">
                 @{user.githubUsername}
               </span>
             )}
-          </p>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight mt-0.5">
-            {current.title}
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">{current.subtitle}</p>
+          </div>
+          <div key={activeTab} className="animate-fade-in">
+            <h1 className="text-xl sm:text-2xl font-black text-slate-100 tracking-tight mt-1 flex items-center gap-2">
+              {current.title}
+            </h1>
+            <p className="text-xs text-slate-400 mt-1">{current.subtitle}</p>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Button
             variant="primary"
             size="sm"

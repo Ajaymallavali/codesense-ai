@@ -56,11 +56,11 @@ def auth_response(user: dict[str, Any]) -> AuthResponse:
 def repository_response(row: dict[str, Any]) -> RepositoryResponse:
     return RepositoryResponse(
         id=row["id"],
-        name=row["name"],
-        fullName=row["full_name"],
-        defaultBranch=row["default_branch"],
+        name=row.get("name") or str(row.get("full_name", "")).split("/")[-1] or "repository",
+        fullName=row.get("full_name") or row.get("name") or "unknown/repository",
+        defaultBranch=row.get("default_branch") or "main",
         language=row.get("language"),
-        importedAt=row["imported_at"],
+        importedAt=row.get("imported_at") or datetime.now(timezone.utc),
     )
 
 
@@ -68,13 +68,13 @@ def analysis_response(row: dict[str, Any]) -> AnalysisResponse:
     return AnalysisResponse(
         id=row["id"],
         repositoryId=row["repository_id"],
-        branch=row["branch"],
+        branch=row.get("branch") or "main",
         maintainabilityScore=row.get("maintainability_score") or 0,
         technicalDebtHours=row.get("technical_debt_hours") or 0,
-        status=row["status"],
-        progress=row.get("progress") or (100 if row["status"] == "COMPLETED" else 0),
+        status=row.get("status") or "COMPLETED",
+        progress=row.get("progress") or (100 if row.get("status") == "COMPLETED" else 0),
         errorMessage=row.get("error_message"),
-        startedAt=row["started_at"],
+        startedAt=row.get("started_at") or datetime.now(timezone.utc),
         completedAt=row.get("completed_at"),
     )
 

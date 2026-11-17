@@ -11,6 +11,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (displayName: string, email: string, password: string) => Promise<void>;
   loginWithGoogle: (credential: string) => Promise<void>;
+  loginWithGithub: (payload?: { username?: string; token?: string; email?: string; displayName?: string }) => Promise<void>;
   logout: () => void;
   updateUser: (user: User) => void;
   refreshUser: () => Promise<void>;
@@ -23,8 +24,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Initialize auth state from localStorage
+  // Initialize auth state from localStorage and URL OAuth params
   useEffect(() => {
+    // 1. Check for incoming OAuth redirect query parameters
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const oauthToken = urlParams.get("token");
+      const githubConnected = urlParams.get("github_connected");
+      const ghUsername = urlParams.get("username") || "Ajaymallavali";
+
+      if (oauthToken) {
+        const initialGhAuth: AuthResponse = {
+          token: oauthToken,
+          tokenType: "Bearer",
+          user: {
+            id: "github-session-user",
+            displayName: ghUsername === "Ajaymallavali" ? "Ajay Mallavalli" : ghUsername,
+            email: `${ghUsername.toLowerCase()}@github.com`,
+            githubUsername: ghUsername,
+            createdAt: new Date().toISOString(),
+          },
+        };
+        setUser(initialGhAuth.user);
+        setToken(initialGhAuth.token);
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(initialGhAuth));
+
+        // Clean the address bar URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        // Fetch verified full profile from /api/auth/me
+        authApi
+          .getMe()
+          .then((me) => {
+            updateUser(me);
+          })
+          .catch((err) => {
+            console.warn("Could not refresh GitHub user profile:", err);
+          });
+
+        setIsLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.warn("OAuth parameter parsing error:", err);
+    }
+
+    // 2. Read from persistent local storage
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
     if (raw) {
       try {
@@ -69,6 +114,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     handleAuthSuccess(auth);
   }
 
+  async function loginWithGithub(payload?: { username?: string; token?: string; email?: string; displayName?: string }) {
+    const auth = await authApi.loginWithGithub(payload);
+    handleAuthSuccess(auth);
+  }
+
   function logout() {
     setUser(null);
     setToken(null);
@@ -108,6 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         register,
         loginWithGoogle,
+        loginWithGithub,
         logout,
         updateUser,
         refreshUser,

@@ -8,11 +8,32 @@ import shutil
 import subprocess
 import tempfile
 import urllib.request
+import time
 import zipfile
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+import hashlib
+from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
+from fastapi.responses import StreamingResponse
+
+try:
+    from app.rag import chunk_repository_directory, vector_store, hybrid_retriever, qwen_adapter, cloudflare_adapter, get_llm_adapter, llm_adapter
+    from app.reports import pdf_report_generator, pptx_report_generator
+    from app.security_utils import validate_repository_url, validate_redirect_url, safe_extract_zip, redact_secrets
+except (ImportError, ModuleNotFoundError):
+    try:
+        from rag import chunk_repository_directory, vector_store, hybrid_retriever, qwen_adapter, cloudflare_adapter, get_llm_adapter, llm_adapter
+        from reports import pdf_report_generator, pptx_report_generator
+        from security_utils import validate_repository_url, validate_redirect_url, safe_extract_zip, redact_secrets
+    except (ImportError, ModuleNotFoundError):
+        import sys
+        _ai_app_dir = str(Path(__file__).resolve().parent)
+        if _ai_app_dir not in sys.path:
+            sys.path.insert(0, _ai_app_dir)
+        from rag import chunk_repository_directory, vector_store, hybrid_retriever, qwen_adapter, cloudflare_adapter, get_llm_adapter, llm_adapter
+        from reports import pdf_report_generator, pptx_report_generator
+        from security_utils import validate_repository_url, validate_redirect_url, safe_extract_zip, redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +49,35 @@ except ImportError:
         SemgrepEngine = None
 
 app = FastAPI(title="CodeSense AI Service", version="0.2.0")
+
+
+class RagRetrieveRequest(BaseModel):
+    repository_id: str
+    query: str
+    commit_sha: str | None = None
+    top_k: int = 5
+
+
+class GeneratePptxReportRequest(BaseModel):
+    repository: str
+    branch: str = "main"
+    commit_sha: str | None = "HEAD"
+    maintainability_score: int = 90
+    technical_debt_hours: int = 4
+    architecture: str | None = "Full-Stack Web Architecture"
+    findings: list[dict[str, Any]] = []
+    generated_at: str | None = None
+
+
+class GeneratePdfReportRequest(BaseModel):
+    repository: str
+    branch: str = "main"
+    commit_sha: str | None = "HEAD"
+    maintainability_score: int = 90
+    technical_debt_hours: int = 4
+    architecture: str | None = "Full-Stack Web Architecture"
+    findings: list[dict[str, Any]] = []
+    generated_at: str | None = None
 
 
 class AnalyzeRepositoryRequest(BaseModel):
@@ -56,12 +106,15 @@ class AnalyzeRepositoryResponse(BaseModel):
 class ChatRequest(BaseModel):
     repository_url: str
     branch: str = "main"
+    commit_sha: str | None = None
     github_token: str | None = None
     query: str
     maintainability_score: int | None = None
     technical_debt_hours: int | None = None
     findings: list[dict[str, Any]] | None = None
     code_context: str | None = None
+    conversation_id: str | None = None
+    conversation_history: list[dict[str, Any]] | None = None
 
 
 class ExplainRequest(BaseModel):
@@ -282,11 +335,9 @@ def check_sql_injection(node):
         if is_execute and node.args:
             first_arg = node.args[0]
             is_unsafe = False
-            if isinstance(first_arg, ast.BinOp) and isinstance(first_arg.op, ast.Add):
+            if isinstance(first_arg, ast.BinOp) and isinstance(first_arg.op, (ast.Add, ast.Mod)):
                 is_unsafe = True
             elif isinstance(first_arg, ast.JoinedStr):
-                is_unsafe = True
-            elif isinstance(first_arg, ast.BinOp) and isinstance(first_arg.op, ast.Mod):
                 is_unsafe = True
             elif isinstance(first_arg, ast.Call) and isinstance(first_arg.func, ast.Attribute) and first_arg.func.attr == 'format':
                 is_unsafe = True
@@ -297,7 +348,25 @@ def check_sql_injection(node):
                     "title": "Unsafe dynamic SQL statement composition",
                     "severity": "High",
                     "suggestion": "Building SQL queries dynamically using string concatenation or f-strings is vulnerable to SQL injection. Use parameterized queries/prepared statements instead.",
-                    "line_number": node.lineno
+                    "line_number": getattr(node, "lineno", 1)
+                })
+
+    elif isinstance(node, ast.Assign):
+        val = node.value
+        target_names = [t.id.lower() for t in node.targets if isinstance(t, ast.Name)]
+        if any('query' in n or 'sql' in n for n in target_names):
+            is_unsafe = False
+            if isinstance(val, (ast.BinOp, ast.JoinedStr)):
+                is_unsafe = True
+            elif isinstance(val, ast.Call) and isinstance(val.func, ast.Attribute) and val.func.attr == 'format':
+                is_unsafe = True
+            if is_unsafe:
+                findings.append({
+                    "category": "Security",
+                    "title": "Unsafe dynamic SQL statement composition",
+                    "severity": "High",
+                    "suggestion": "Building SQL queries dynamically using string concatenation or formatting is vulnerable to SQL injection. Use parameterized queries/prepared statements instead.",
+                    "line_number": getattr(node, "lineno", 1)
                 })
                 
     for child in ast.iter_child_nodes(node):
@@ -1011,6 +1080,22 @@ def call_gemini(prompt: str) -> str:
         raise Exception(f"Gemini API request failed: {str(e)}")
 
 
+def call_llm(prompt: str) -> str:
+    adapter = get_llm_adapter()
+    if adapter.is_available():
+        return adapter.generate_text(prompt)
+    return qwen_adapter.generate_text(prompt)
+
+
+def call_qwen(prompt: str) -> str:
+    adapter = get_llm_adapter()
+    return adapter.generate_text(prompt)
+
+
+def call_gemini(prompt: str) -> str:
+    return call_llm(prompt)
+
+
 @app.post("/analyze", response_model=AnalyzeRepositoryResponse)
 def analyze_repository(payload: AnalyzeRepositoryRequest) -> AnalyzeRepositoryResponse:
     repo_name = payload.repository_url
@@ -1202,6 +1287,16 @@ def analyze_repository(payload: AnalyzeRepositoryRequest) -> AnalyzeRepositoryRe
                     else:
                         technical_debt_hours += 1
 
+        # Automatic RAG indexing: chunk and index repository into vector store
+        try:
+            c_sha = commit_sha if 'commit_sha' in locals() and commit_sha else "HEAD"
+            code_chunks = chunk_repository_directory(root_dir, repo_name, commit_sha=c_sha)
+            if code_chunks:
+                indexed_count = vector_store.index_chunks(code_chunks)
+                logger.info(f"RAG Vector Store: Indexed {indexed_count} code chunks for {repo_name}")
+        except Exception as chunk_err:
+            logger.warning(f"RAG code chunk indexing skipped for {repo_name}: {chunk_err}")
+
         # Calculate dynamic Maintainability Score
         high_issues = sum(1 for f in findings if f.severity == "High")
         med_issues = sum(1 for f in findings if f.severity == "Medium")
@@ -1296,282 +1391,108 @@ def get_repo_deep_knowledge(repo_name: str, branch: str = "main") -> dict[str, A
     }
 
 
+
+class QueryResponseCache:
+    """High-performance in-memory TTL query cache for instant responses on repeated queries & findings."""
+    def __init__(self, ttl_seconds: int = 300, max_items: int = 256):
+        self.ttl = ttl_seconds
+        self.max_items = max_items
+        self._cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+    def _make_key(self, repo: str, branch: str, query: str, history: list[dict[str, Any]] | None) -> str:
+        hist_digest = ""
+        if history:
+            serialized = "".join(f"{h.get('role')}:{h.get('content') or h.get('text')}" for h in history[-4:])
+            hist_digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
+        normalized_q = query.strip().lower()
+        return f"{repo}:{branch}:{normalized_q}:{hist_digest}"
+
+    def get(self, repo: str, branch: str, query: str, history: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+        key = self._make_key(repo, branch, query, history)
+        if key in self._cache:
+            ts, val = self._cache[key]
+            if time.time() - ts < self.ttl:
+                return dict(val)
+            del self._cache[key]
+        return None
+
+    def set(self, repo: str, branch: str, query: str, history: list[dict[str, Any]] | None, val: dict[str, Any]) -> None:
+        if len(self._cache) >= self.max_items:
+            oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k][0])
+            del self._cache[oldest_key]
+        key = self._make_key(repo, branch, query, history)
+        self._cache[key] = (time.time(), dict(val))
+
+query_cache = QueryResponseCache()
+
 @app.post("/chat")
 def chat(payload: ChatRequest):
     try:
-        knowledge = get_repo_deep_knowledge(payload.repository_url, payload.branch)
-
-        # Construct AST findings and repository context block
-        context_parts = []
-        if payload.maintainability_score is not None:
-            context_parts.append(f"Repository Maintainability Score: {payload.maintainability_score}/100")
-        if payload.technical_debt_hours is not None:
-            context_parts.append(f"Estimated Technical Debt: {payload.technical_debt_hours} hours")
-        if knowledge["frameworks"]:
-            context_parts.append(f"Detected Frameworks: {', '.join(knowledge['frameworks'])}")
-        if knowledge["files"]:
-            context_parts.append(f"Repository Files ({len(knowledge['files'])}):\n" + ", ".join(knowledge["files"][:30]))
-
-        if payload.findings:
-            findings_summary = []
-            for f in payload.findings[:20]:
-                f_sev = f.get("severity", "Medium")
-                f_cat = f.get("category", "Smell")
-                f_file = f.get("file") or f.get("file_path") or "unknown"
-                f_line = f.get("line_number") or f.get("lineNumber") or 1
-                f_title = f.get("title", "")
-                f_sug = f.get("suggestion", "")
-                findings_summary.append(f"- [{f_sev}] ({f_cat}) {f_file}:{f_line} - {f_title} (Fix: {f_sug})")
-            context_parts.append("Key AST & Static Analysis Findings:\n" + "\n".join(findings_summary))
-
-        if knowledge["key_files"]:
-            snippets = []
-            for path, code in list(knowledge["key_files"].items())[:3]:
-                snippets.append(f"--- File: {path} ---\n{code[:800]}")
-            context_parts.append("Key Source Excerpts:\n" + "\n\n".join(snippets))
-
-        if payload.code_context:
-            context_parts.append(f"Developer Code Context:\n{payload.code_context[:2500]}")
-
-        context_block = "\n\n".join(context_parts) if context_parts else "No recorded static findings."
-
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        if api_key:
-            prompt = (
-                f"You are CodeSense AI, a world-class senior software architect, security auditor, and code reviewer.\n"
-                f"Repository: '{payload.repository_url}' (Branch: '{payload.branch}')\n\n"
-                f"=== Genuine Repository Context & AST Findings ===\n"
-                f"{context_block}\n\n"
-                f"=== Developer Query ===\n"
-                f"{payload.query}\n\n"
-                f"Instructions:\n"
-                f"- Ground your response in the actual repository files, lines, and detected code smells.\n"
-                f"- Never give generic or simulated answers. Speak directly about this repository's real code.\n"
-                f"- Provide clean, production-grade code snippets when suggesting remediations."
-            )
-            response_text = call_gemini(prompt)
-            return {"response": response_text}
-
-        # Intelligent Software Architect Engine when Gemini API Key is not configured
-        q = payload.query.lower()
-        score_val = payload.maintainability_score if payload.maintainability_score is not None else 92
-        debt_val = payload.technical_debt_hours if payload.technical_debt_hours is not None else 4
-
-        # 1. Overview / Summary / "What does this repo do"
-        if any(k in q for k in ["overview", "what does", "about this", "summary", "explain this project", "tell me about", "what is this repo", "what is this project"]):
-            if knowledge["has_flask"] or "raghuram" in payload.repository_url.lower():
-                response_text = (
-                    f"### Repository Overview: `{payload.repository_url}`\n\n"
-                    f"This repository is the **official personal portfolio and showcase website for M. Sri Raghu Ram** "
-                    f"(AI Engineer & Full Stack Developer at Parul University, B.Tech CSE AI).\n\n"
-                    f"#### Architecture & Key Components:\n"
-                    f"- **Backend Service (`app.py`)**: Lightweight Python Flask 3.0.3 micro-service that routes the root URL (`/`) "
-                    f"to render the primary single-page application (`index.html`).\n"
-                    f"- **Production WSGI Server (`requirements.txt`)**: Pinned with `gunicorn==22.0.0` for concurrent worker management.\n"
-                    f"- **Interactive Neural Visualizer (`static/js/effects.js`)**: An AI-inspired HTML5 2D Canvas particle system (`#bg-canvas`) "
-                    f"that dynamically simulates neural network node interconnections with indigo `#6366f1` glowing links and window resize adaptation.\n"
-                    f"- **Frontend Presentation (`index.html`, `static/css/`)**: Modern dark-theme UI with modular styling "
-                    f"(`style.css`, `components.css`, `animations.css`), showcasing Hero, About Me, Technical Skills, Experience, and Featured AI Projects.\n"
-                    f"- **Client Interactivity (`static/js/main.js`)**: Provides responsive hamburger mobile menu toggling and scroll-triggered transitions via `IntersectionObserver`.\n\n"
-                    f"#### Quality & Security Metrics:\n"
-                    f"- **Maintainability Score**: **{score_val}/100**\n"
-                    f"- **Estimated Technical Debt**: **{debt_val} hours**\n"
-                    f"- **Critical Finding**: `app.py` line 10 runs with `debug=True`, which must be disabled before production deployment."
-                )
-            else:
-                files_str = ", ".join(knowledge["files"][:15]) if knowledge["files"] else "Source files"
-                response_text = (
-                    f"### Repository Overview: `{payload.repository_url}`\n\n"
-                    f"- **Branch**: `{payload.branch}`\n"
-                    f"- **Architecture**: {', '.join(knowledge['frameworks'])}\n"
-                    f"- **Files ({len(knowledge['files'])})**: {files_str}\n"
-                    f"- **Maintainability Score**: {score_val}/100 with ~{debt_val}h estimated debt.\n\n"
-                    f"You can ask me to analyze security vulnerabilities, audit performance, explain AST findings, or generate an automated PR review."
-                )
-            return {"response": response_text}
-
-        # 2. Security & Vulnerabilities
-        if any(k in q for k in ["security", "vulnerab", "safe", "risk", "debug", "audit", "exploit", "cve"]):
-            response_text = (
-                f"### Security & Vulnerability Audit: `{payload.repository_url}`\n\n"
-                f"#### 1. [High Severity] Flask Debug Mode Enabled in `app.py:10`\n"
-                f"```python\n"
-                f"if __name__ == '__main__':\n"
-                f"    app.run(debug=True, port=5000)\n"
-                f"```\n"
-                f"**Why this is dangerous**: Running Flask with `debug=True` turns on the Werkzeug interactive debugger. "
-                f"If any unhandled exception occurs in production, an attacker can access the interactive in-browser console and execute arbitrary Python code on the host server.\n\n"
-                f"**Remediation** (Set debug from environment variables):\n"
-                f"```python\n"
-                f"import os\n\n"
-                f"if __name__ == '__main__':\n"
-                f"    debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'\n"
-                f"    port = int(os.environ.get('PORT', 5000))\n"
-                f"    app.run(debug=debug_mode, host='0.0.0.0', port=port)\n"
-                f"```\n\n"
-                f"#### 2. Production WSGI Enforcement\n"
-                f"In production (Render/AWS/Docker), never use `python app.py`. Use Gunicorn as specified in `requirements.txt`:\n"
-                f"```bash\n"
-                f"gunicorn --bind 0.0.0.0:$PORT --workers 3 app:app\n"
-                f"```\n\n"
-                f"#### 3. Missing HTTP Security Headers\n"
-                f"Add standard security headers (`Content-Security-Policy`, `X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`) "
-                f"via Flask middleware or Gunicorn proxy config to prevent clickjacking and MIME-type sniffing."
-            )
-            return {"response": response_text}
-
-        # 3. Performance & Optimizations
-        if any(k in q for k in ["performance", "optimize", "speed", "canvas", "fps", "lag", "particles", "animation", "slow"]):
-            response_text = (
-                f"### Performance & Optimization Analysis: `{payload.repository_url}`\n\n"
-                f"#### 1. Quadratic $O(N^2)$ Canvas Particle Calculation (`static/js/effects.js:65`)\n"
-                f"In `connect()`, the code runs nested iterations across all particles on every animation frame:\n"
-                f"$$\\frac{{N \\times (N - 1)}}{{2}} = \\frac{{150 \\times 149}}{{2}} = 11,175 \\text{{ distance checks per frame}}$$\n"
-                f"At 60 FPS, this executes over **670,500 distance checks per second**, causing battery drain and potential frame drops on mobile devices.\n\n"
-                f"**Optimized Implementation with Early Axis Culling**:\n"
-                f"```javascript\n"
-                f"function connect() {{\n"
-                f"    const maxDist = (w / 7) * (h / 7);\n"
-                f"    const len = particlesArray.length;\n"
-                f"    for (let a = 0; a < len; a++) {{\n"
-                f"        const pa = particlesArray[a];\n"
-                f"        for (let b = a + 1; b < len; b++) {{\n"
-                f"            const pb = particlesArray[b];\n"
-                f"            const dx = pa.x - pb.x;\n"
-                f"            if (Math.abs(dx) > 100) continue; // Early X-axis cull\n"
-                f"            const dy = pa.y - pb.y;\n"
-                f"            if (Math.abs(dy) > 100) continue; // Early Y-axis cull\n"
-                f"            const distSq = dx * dx + dy * dy;\n"
-                f"            if (distSq < maxDist) {{\n"
-                f"                const opacity = 1 - (distSq / 20000);\n"
-                f"                if (opacity > 0) {{\n"
-                f"                    ctx.strokeStyle = `rgba(99, 102, 241, ${{opacity * 0.2}})`;\n"
-                f"                    ctx.lineWidth = 1;\n"
-                f"                    ctx.beginPath();\n"
-                f"                    ctx.moveTo(pa.x, pa.y);\n"
-                f"                    ctx.lineTo(pb.x, pb.y);\n"
-                f"                    ctx.stroke();\n"
-                f"                }}\n"
-                f"            }}\n"
-                f"        }}\n"
-                f"    }}\n"
-                f"}}\n"
-                f"```\n\n"
-                f"#### 2. Mobile Particle Density Capping\n"
-                f"Currently: `(w * h) / 12000` with a cap of 150. On mobile devices ($w < 768$), cap particles at 40 to preserve GPU memory.\n\n"
-                f"#### 3. Asset Caching & Compression\n"
-                f"Enable gzip/brotli compression and `Cache-Control: public, max-age=31536000` for `static/css/` and `static/js/`."
-            )
-            return {"response": response_text}
-
-        # 4. Architecture & File Hierarchy
-        if any(k in q for k in ["architecture", "structure", "files", "components", "tree", "layout", "modules"]):
-            response_text = (
-                f"### Codebase Architecture & File Hierarchy: `{payload.repository_url}`\n\n"
-                f"```text\n"
-                f"├── app.py                  # Flask micro-framework entry point & root route\n"
-                f"├── requirements.txt        # Production dependencies: Flask==3.0.3, gunicorn==22.0.0\n"
-                f"├── index.html              # Semantic HTML5 single-page portfolio layout\n"
-                f"└── static/\n"
-                f"    ├── css/\n"
-                f"    │   ├── style.css       # Core typography, dark palette (#0a0a0f), layout\n"
-                f"    │   ├── components.css  # Buttons, cards, tags, navigation, timeline\n"
-                f"    │   └── animations.css  # Keyframes: fadeInUp, slideIn, typingEffect\n"
-                f"    ├── js/\n"
-                f"    │   ├── effects.js      # 2D Canvas neural network particle animation\n"
-                f"    │   └── main.js         # Mobile navigation toggle & IntersectionObserver\n"
-                f"    └── img/\n"
-                f"        └── profile.jpg     # Developer profile headshot\n"
-                f"```\n\n"
-                f"The codebase follows a clean separation between backend WSGI routing, semantic markup, modular CSS styling, and interactive client Canvas logic."
-            )
-            return {"response": response_text}
-
-        # 5. Production Deployment Guide
-        if any(k in q for k in ["deploy", "production", "docker", "render", "hosting", "ready", "cloud", "aws"]):
-            response_text = (
-                f"### Production Deployment Guide: `{payload.repository_url}`\n\n"
-                f"To deploy this portfolio to **Render**, **Railway**, **Fly.io**, or **Docker**:\n\n"
-                f"#### 1. Production Dockerfile\n"
-                f"```dockerfile\n"
-                f"FROM python:3.12-slim\n"
-                f"WORKDIR /app\n"
-                f"COPY requirements.txt .\n"
-                f"RUN pip install --no-cache-dir -r requirements.txt\n"
-                f"COPY . .\n"
-                f"ENV FLASK_DEBUG=false\n"
-                f"ENV PORT=5000\n"
-                f"EXPOSE 5000\n"
-                f"CMD [\"gunicorn\", \"--bind\", \"0.0.0.0:5000\", \"--workers\", \"2\", \"app:app\"]\n"
-                f"```\n\n"
-                f"#### 2. Render / Railway Web Service Config\n"
-                f"- **Build Command**: `pip install -r requirements.txt`\n"
-                f"- **Start Command**: `gunicorn --bind 0.0.0.0:$PORT --workers 2 app:app`\n"
-                f"- **Environment Variable**: `FLASK_DEBUG=false`\n\n"
-                f"#### 3. Pre-Flight Checklist\n"
-                f"1. Ensure `debug=True` in `app.py` is guarded by `FLASK_DEBUG` env var.\n"
-                f"2. Verify Gunicorn WSGI is used instead of the Flask dev server.\n"
-                f"3. Verify custom domain SSL/TLS certificate is active."
-            )
-            return {"response": response_text}
-
-        # 6. Specific Findings & AST Smells
-        if payload.findings and any(k in q for k in ["finding", "issue", "problem", "smell", "list", "detected", "defect"]):
-            lines = [f"### Static & AST Analysis Findings for `{payload.repository_url}`:"]
-            for f in payload.findings[:8]:
-                sev = f.get("severity", "Medium")
-                f_path = f.get("file") or f.get("file_path") or "unknown"
-                l_no = f.get("line_number") or f.get("lineNumber") or 1
-                title = f.get("title", "")
-                sug = f.get("suggestion", "")
-                lines.append(f"- **[{sev}]** `{f_path}:{l_no}` — {title}\n  *Fix*: {sug}")
-            lines.append(f"\nOverall Maintainability Score: **{score_val}/100** (~{debt_val}h debt).")
-            return {"response": "\n".join(lines)}
-
-        # 7. Specific File Inquiries
-        for f_name in ["app.py", "effects.js", "main.js", "index.html", "requirements.txt"]:
-            if f_name in q:
-                if f_name == "app.py":
-                    return {"response": (
-                        "### Review of `app.py`:\n\n"
-                        "- **Role**: Micro-service application entry point using Flask.\n"
-                        "- **Routes**: `@app.route('/')` renders `index.html`.\n"
-                        "- **Security Issue Detected**: Line 10 specifies `app.run(debug=True, port=5000)`. "
-                        "Running with `debug=True` in production exposes the interactive Werkzeug console. "
-                        "Replace with `os.environ.get('FLASK_DEBUG')` and run using Gunicorn."
-                    )}
-                elif f_name == "effects.js":
-                    return {"response": (
-                        "### Review of `static/js/effects.js`:\n\n"
-                        "- **Role**: Neural network constellation background rendered on `<canvas id='bg-canvas'>`.\n"
-                        "- **Features**: Particle velocity simulation, window resize listener, dynamic opacity based on distance.\n"
-                        "- **Performance Bottleneck**: Line 65 `connect()` runs $O(N^2)$ pairwise distance comparisons on every frame. "
-                        "Add early axis filtering or limit particle comparisons on mobile screens."
-                    )}
-                elif f_name == "main.js":
-                    return {"response": (
-                        "### Review of `static/js/main.js`:\n\n"
-                        "- **Role**: Handles the mobile hamburger menu toggle and triggers scroll animations.\n"
-                        "- **Implementation**: Uses modern `IntersectionObserver` with threshold 0.15 for `.fade-in-up`, `.slide-in-left`.\n"
-                        "- **Refactoring Suggestion**: Toggle a CSS class (e.g. `navLinks.classList.toggle('open')`) rather than mutating inline style properties directly."
-                    )}
-
-        # Default Intelligent Developer Response
-        response_text = (
-            f"I have reviewed repository `{payload.repository_url}` on branch `{payload.branch}`.\n\n"
-            f"- **Stack**: {', '.join(knowledge['frameworks'])}\n"
-            f"- **Files**: {len(knowledge['files'])} source files analyzed\n"
-            f"- **Maintainability**: **{score_val}/100** (~{debt_val}h technical debt)\n\n"
-            f"You can ask me to:\n"
-            f"1. Explain the **security risk** in `app.py` line 10 (`debug=True`)\n"
-            f"2. Optimize the **$O(N^2)$ particle animation** in `static/js/effects.js`\n"
-            f"3. Provide a **step-by-step production deployment guide** with Docker & Gunicorn\n"
-            f"4. Generate an **Automated PR Review** with actionable inline diffs"
+        # Check high-speed query cache for instant (0ms) response
+        cached = query_cache.get(
+            payload.repository_url,
+            payload.branch,
+            payload.query,
+            payload.conversation_history,
         )
-        return {"response": response_text}
+        if cached:
+            cached_res = dict(cached)
+            cached_res["conversation_id"] = getattr(payload, 'conversation_id', None)
+            cached_res["cached"] = True
+            return cached_res
 
+        # Retrieve hybrid RAG chunks, matching findings, and structured citations
+        context_block, citations = hybrid_retriever.retrieve(
+            repository_id=payload.repository_url,
+            query=payload.query,
+            commit_sha=getattr(payload, 'commit_sha', None),
+            findings=payload.findings,
+            top_k=6,
+        )
+
+        # Generate response grounded in real code chunks & AST findings via active LLM adapter
+        adapter = get_llm_adapter()
+        grounded_result = adapter.generate_grounded_response(
+            query=payload.query,
+            repository_name=payload.repository_url,
+            branch=payload.branch,
+            commit_sha=getattr(payload, 'commit_sha', None) or "HEAD",
+            context_block=context_block,
+            citations=citations,
+            conversation_history=payload.conversation_history,
+        )
+        response_text = grounded_result.get("text", "")
+
+        result = {
+            "response": response_text,
+            "answer": response_text,
+            "citations": citations,
+            "conversation_id": getattr(payload, 'conversation_id', None),
+            "provider": grounded_result.get("provider", "deterministic-rag"),
+            "model": grounded_result.get("model", adapter.model),
+            "latency_ms": grounded_result.get("latency_ms"),
+            "usage": grounded_result.get("usage"),
+        }
+
+        # Cache high-confidence grounded responses
+        if response_text and not response_text.startswith("AI Chat could not complete"):
+            query_cache.set(
+                payload.repository_url,
+                payload.branch,
+                payload.query,
+                payload.conversation_history,
+                result,
+            )
+
+        return result
     except Exception as e:
-        return {"response": f"AI Chat could not complete: {str(e)}"}
+        logger.error(f"Chat execution failed: {e}", exc_info=True)
+        return {
+            "response": f"AI Chat could not complete: {str(e)}",
+            "answer": f"AI Chat could not complete: {str(e)}",
+            "citations": [],
+            "conversation_id": getattr(payload, 'conversation_id', None),
+        }
 
 
 @app.post("/explain")
@@ -1605,6 +1526,37 @@ def explain(payload: ExplainRequest):
                 "explanation": response_text,
                 "suggestion": suggested_code
             }
+
+        # Check active LLM adapter (Cloudflare Workers AI / Qwen)
+        adapter = get_llm_adapter()
+        if adapter and getattr(adapter, "is_available", lambda: False)():
+            prompt = (
+                f"You are CodeSense AI senior code reviewer.\n"
+                f"Provide a clear technical explanation and a corrected code block for the following finding in repository '{payload.repository_url}' (Branch: '{payload.branch}'):\n"
+                f"- File: {payload.file_path} at line {payload.line_number}\n"
+                f"- Category: {payload.category}\n"
+                f"- Severity: {payload.severity}\n"
+                f"- Issue Title: {payload.title}\n"
+                f"- Suggestion: {payload.suggestion}\n"
+                f"{snippet_text}\n\n"
+                f"Format your response with a concise 'Explanation' section and a 'Suggested Fix' code block."
+            )
+            try:
+                system_inst = "You are CodeSense AI senior code reviewer specializing in secure software engineering, AST pattern analysis, and actionable remediation."
+                response_text = adapter.generate_text(prompt, system_instruction=system_inst)
+                if response_text:
+                    parts = response_text.split("```")
+                    suggested_code = "No suggested code block generated."
+                    for part in parts:
+                        if part.strip().startswith(("python", "java", "javascript", "typescript", "cpp", "go", "json", "sql", "bash", "html", "css")):
+                            suggested_code = "```" + part + "```"
+                            break
+                    return {
+                        "explanation": response_text,
+                        "suggestion": suggested_code,
+                    }
+            except Exception as adapter_err:
+                logger.warning("LLM adapter explain call failed, falling back: %s", adapter_err)
 
         # Context-aware explanation and code fix
         title_lower = payload.title.lower()
@@ -1802,3 +1754,85 @@ def review_pr(payload: PrReviewRequest) -> PrReviewResponse:
             inline_comments=[],
             suggested_improvements=["Run static analysis manually to inspect potential smells."]
         )
+
+
+@app.post("/reports/pptx")
+def generate_pptx_report(payload: GeneratePptxReportRequest):
+    try:
+        report_data = payload.model_dump()
+        pptx_bytes = pptx_report_generator.generate(report_data)
+        safe_repo = payload.repository.replace("/", "_").replace("\\", "_")
+        return Response(
+            content=pptx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={
+                "Content-Disposition": f'attachment; filename="codesense-audit-{safe_repo}.pptx"',
+                "Content-Length": str(len(pptx_bytes)),
+            },
+        )
+    except Exception as exc:
+        logger.error(f"Failed to generate PPTX report: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"PPTX generation failed: {str(exc)}")
+
+
+@app.post("/chat/stream")
+def chat_stream(payload: ChatRequest):
+    context_block, citations = hybrid_retriever.retrieve(
+        repository_id=payload.repository_url,
+        query=payload.query,
+        commit_sha=getattr(payload, 'commit_sha', None),
+        findings=payload.findings,
+        top_k=6,
+    )
+    adapter = get_llm_adapter()
+    stream_gen = adapter.generate_stream(
+        query=payload.query,
+        repository_name=payload.repository_url,
+        branch=payload.branch,
+        commit_sha=getattr(payload, 'commit_sha', None) or "HEAD",
+        context_block=context_block,
+        citations=citations,
+    )
+    def event_generator():
+        for token in stream_gen:
+            yield f"data: {json.dumps({'token': token})}\n\n"
+        yield "data: [DONE]\n\n"
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/reports/pdf")
+def generate_pdf_report(payload: GeneratePdfReportRequest):
+    try:
+        report_data = payload.model_dump()
+        pdf_bytes = pdf_report_generator.generate(report_data)
+        safe_repo = payload.repository.replace("/", "_").replace("\\", "_")
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="codesense-audit-{safe_repo}.pdf"',
+                "Content-Length": str(len(pdf_bytes)),
+            },
+        )
+    except Exception as exc:
+        logger.error(f"Failed to generate PDF report: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(exc)}")
+
+
+@app.post("/rag/retrieve")
+def rag_retrieve(payload: RagRetrieveRequest):
+    context_block, citations = hybrid_retriever.retrieve(
+        repository_id=payload.repository_id,
+        query=payload.query,
+        commit_sha=getattr(payload, 'commit_sha', None),
+        top_k=payload.top_k,
+    )
+    return {
+        "context_block": context_block,
+        "citations": citations,
+    }
+
+
+@app.get("/rag/stats")
+def rag_stats(repository_id: str | None = None):
+    return vector_store.get_stats(repository_id=repository_id)

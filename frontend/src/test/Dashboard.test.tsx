@@ -94,4 +94,41 @@ describe("Dashboard Page Component", () => {
       expect(screen.getByText("Hardcoded secret detected")).toBeInTheDocument();
     });
   });
+
+  it("opens Decisions Taken by AI modal and allows proceeding to AI Review Analysis", async () => {
+    const handleNavigate = vi.fn();
+    render(
+      <Dashboard
+        activeRepo={mockRepo}
+        latestAnalysis={mockAnalysis}
+        findingsList={mockFindings}
+        isLoadingAnalysis={false}
+        onTriggerAnalysis={vi.fn()}
+        onNavigateToReview={handleNavigate}
+        onOpenImportModal={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Hardcoded secret detected")).toBeInTheDocument();
+    });
+
+    // Click the first "AI Decision ->" button
+    const aiDecisionButtons = screen.getAllByRole("button", { name: /ai decision/i });
+    expect(aiDecisionButtons.length).toBeGreaterThan(0);
+    aiDecisionButtons[0].click();
+
+    // Verify "Decisions Taken by AI" section is displayed
+    await waitFor(() => {
+      expect(screen.getAllByText("Decisions Taken by AI").length).toBeGreaterThan(0);
+      expect(screen.getByText(/Extract Secret into Environment Config/i)).toBeInTheDocument();
+    });
+
+    // Click "Proceed to AI-Review Analysis ->"
+    const proceedButtons = screen.getAllByRole("button", { name: /proceed to ai-review analysis/i });
+    expect(proceedButtons.length).toBeGreaterThan(0);
+    proceedButtons[0].click();
+
+    expect(handleNavigate).toHaveBeenCalledWith("app/auth.py", "f-1");
+  });
 });

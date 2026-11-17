@@ -141,4 +141,64 @@ class DevStore:
         self.save()
 
 
+    def get_conversations(self) -> dict[str, list[dict[str, Any]]]:
+        return self._data.setdefault("conversations", {})
+
+    def get_conversation_messages(self, conversation_id: str) -> list[dict[str, Any]]:
+        return self.get_conversations().get(str(conversation_id), [])
+
+    def get_conversation_owner(self, conversation_id: str) -> str | None:
+        return self._data.setdefault("conversation_owners", {}).get(str(conversation_id))
+
+    def index_repo_conversation(self, repo_id: str, conversation_id: str, user_id: str | None = None) -> None:
+        c_id = str(conversation_id)
+        r_str = str(repo_id)
+        self._data.setdefault("repo_conversations", {})[r_str] = c_id
+        if user_id:
+            self._data.setdefault("user_repo_conversations", {})[f"{user_id}:{r_str}"] = c_id
+        self.save()
+
+    def save_conversation_message(
+        self,
+        conversation_id: str,
+        message: dict[str, Any],
+        user_id: str | None = None,
+        repo_id: str | None = None,
+    ) -> None:
+        convs = self.get_conversations()
+        c_id = str(conversation_id)
+        if c_id not in convs:
+            convs[c_id] = []
+        convs[c_id].append(message)
+        if user_id:
+            self._data.setdefault("conversation_owners", {})[c_id] = str(user_id)
+        if repo_id:
+            self.index_repo_conversation(repo_id, c_id, user_id=user_id)
+        else:
+            self.save()
+
+    def get_latest_conversation_for_repo(self, repo_id: str, user_id: str | None = None) -> str | None:
+        r_str = str(repo_id)
+        convs = self.get_conversations()
+        if user_id:
+            user_c_id = self._data.setdefault("user_repo_conversations", {}).get(f"{user_id}:{r_str}")
+            if user_c_id and user_c_id in convs:
+                return user_c_id
+        c_id = self._data.setdefault("repo_conversations", {}).get(r_str)
+        if c_id and c_id in convs:
+            return c_id
+        for repo in self._data.get("repositories", []):
+            if str(repo.get("id")) == r_str or repo.get("name") == r_str or repo.get("full_name") == r_str:
+                for alt_key in (str(repo.get("id")), repo.get("name"), repo.get("full_name")):
+                    if alt_key and user_id:
+                        alt_c_id = self._data.get("user_repo_conversations", {}).get(f"{user_id}:{alt_key}")
+                        if alt_c_id and alt_c_id in convs:
+                            return alt_c_id
+                    if alt_key:
+                        alt_c_id = self._data.get("repo_conversations", {}).get(str(alt_key))
+                        if alt_c_id and alt_c_id in convs:
+                            return alt_c_id
+        return None
+
+
 dev_store = DevStore()

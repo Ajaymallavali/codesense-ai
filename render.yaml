@@ -3,6 +3,7 @@ services:
   - type: web
     name: codesense-backend
     env: python
+    region: singapore
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
@@ -15,34 +16,62 @@ services:
           property: connectionString
       - key: REDIS_URL
         fromService:
-          type: redis
+          type: keyvalue
           name: codesense-redis
           property: connectionString
       - key: AI_SERVICE_URL
         fromService:
           type: web
           name: codesense-ai-service
-          property: host
+          property: hostport
+      - key: CORS_ORIGINS
+        value: https://codesense-ai.pages.dev,http://localhost:5173
       - key: JWT_SECRET
         generateValue: true
+      - key: LLM_PROVIDER
+        value: cloudflare
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_MODEL
+        value: "@cf/qwen/qwen2.5-coder-32b-instruct"
 
-  # 2. FastAPI AI Service
+  # 2. FastAPI AI Service & RAG Vector Engine
   - type: web
     name: codesense-ai-service
     env: python
+    region: singapore
     rootDir: ai-service
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: codesense-rag-disk
+      mountPath: /var/data/codesense_rag
+      sizeGB: 1
     envVars:
       - key: ENVIRONMENT
         value: production
-      - key: GEMINI_API_KEY
+      - key: RAG_INDEX_DIR
+        value: /var/data/codesense_rag
+      - key: LLM_PROVIDER
+        value: cloudflare
+      - key: CLOUDFLARE_API_TOKEN
         sync: false
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_MODEL
+        value: "@cf/qwen/qwen2.5-coder-32b-instruct"
+      - key: QWEN_API_KEY
+        sync: false
+      - key: QWEN_MODEL
+        value: Qwen/Qwen3-Coder-Next
 
   # 3. Dedicated Background Queue Worker
   - type: worker
     name: codesense-worker
     env: python
+    region: singapore
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: python -m app.worker
@@ -55,18 +84,19 @@ services:
           property: connectionString
       - key: REDIS_URL
         fromService:
-          type: redis
+          type: keyvalue
           name: codesense-redis
           property: connectionString
       - key: AI_SERVICE_URL
         fromService:
           type: web
           name: codesense-ai-service
-          property: host
+          property: hostport
 
-  # 4. Redis Key-Value Store & Task Queue
-  - type: redis
+  # 4. Redis Key-Value Store & Task Queue (Render KeyValue Service)
+  - type: keyvalue
     name: codesense-redis
+    region: singapore
     ipAllowList: []
     plan: starter
     maxmemoryPolicy: noeviction
@@ -74,6 +104,7 @@ services:
 databases:
   # 5. PostgreSQL Managed Database
   - name: codesense-postgres
+    region: singapore
     databaseName: codesense
     user: codesense
     plan: starter

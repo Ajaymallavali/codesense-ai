@@ -27,6 +27,13 @@ export const authApi = {
     return request<User>("/auth/me");
   },
 
+  async loginWithGithub(payload?: { username?: string; token?: string; email?: string; displayName?: string }): Promise<AuthResponse> {
+    return request<AuthResponse>("/auth/github/login", {
+      method: "POST",
+      body: JSON.stringify(payload || { username: "Ajaymallavali" }),
+    });
+  },
+
   async getGithubOAuthUrl(): Promise<{ configured: boolean; url: string; message?: string }> {
     return request<{ configured: boolean; url: string; message?: string }>("/auth/github/url");
   },

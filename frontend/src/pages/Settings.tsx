@@ -81,18 +81,22 @@ export function SettingsPage({ user }: SettingsPageProps) {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
+    <div className="grid gap-6 md:grid-cols-2 animate-fade-in">
       {/* Profile Card */}
-      <Card title="Profile & Integration Settings" subtitle="Configure your name and GitHub credentials">
+      <Card
+        title="Profile & Integration Settings"
+        subtitle="Configure your name and GitHub credentials"
+        className="transition-all duration-300 hover:scale-[1.01] hover:border-emerald-500/40 hover:shadow-[0_0_20px_rgba(16,185,129,0.15)]"
+      >
         {profileSuccess && (
-          <div className="mb-4 flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 p-3 text-xs font-medium text-emerald-800">
+          <div className="mb-4 flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-950/40 p-3 text-xs font-medium text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)] animate-fade-in">
             <CheckCircle2 size={15} />
             <span>{profileSuccess}</span>
           </div>
         )}
 
         {profileError && (
-          <div className="mb-4 flex items-center gap-2 rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+          <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-500/40 bg-rose-950/40 p-3 text-xs text-rose-300 animate-fade-in">
             <AlertCircle size={15} />
             <span>{profileError}</span>
           </div>
@@ -104,7 +108,7 @@ export function SettingsPage({ user }: SettingsPageProps) {
             type="email"
             value={user.email}
             readOnly
-            icon={<Mail size={15} />}
+            icon={<Mail size={15} className="text-emerald-400" />}
           />
 
           <Input
@@ -112,7 +116,7 @@ export function SettingsPage({ user }: SettingsPageProps) {
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            icon={<UserRound size={15} />}
+            icon={<UserRound size={15} className="text-emerald-400" />}
             required
           />
 
@@ -122,7 +126,7 @@ export function SettingsPage({ user }: SettingsPageProps) {
             placeholder="e.g. torvalds"
             value={githubUsername}
             onChange={(e) => setGithubUsername(e.target.value)}
-            icon={<Github size={15} />}
+            icon={<Github size={15} className="text-emerald-400" />}
           />
 
           <div>
@@ -132,15 +136,15 @@ export function SettingsPage({ user }: SettingsPageProps) {
               placeholder="ghp_••••••••••••••••••••••••••••••••••••"
               value={githubToken}
               onChange={(e) => setGithubToken(e.target.value)}
-              icon={<Key size={15} />}
+              icon={<Key size={15} className="text-emerald-400" />}
             />
-            <p className="mt-1 text-[11px] text-slate-400">
+            <p className="mt-1.5 text-[11px] text-slate-400">
               Required for private repo access.{" "}
               <a
                 href="https://github.com/settings/tokens"
                 target="_blank"
                 rel="noreferrer"
-                className="text-teal-700 hover:underline"
+                className="text-emerald-400 hover:text-emerald-300 hover:underline transition-colors"
               >
                 Generate token on GitHub &rarr;
               </a>
@@ -154,16 +158,20 @@ export function SettingsPage({ user }: SettingsPageProps) {
       </Card>
 
       {/* Password & Security Card */}
-      <Card title="Security & Password" subtitle="Change your account authentication credentials">
+      <Card
+        title="Security & Password"
+        subtitle="Change your account authentication credentials"
+        className="transition-all duration-300 hover:scale-[1.01] hover:border-emerald-500/40 hover:shadow-[0_0_20px_rgba(16,185,129,0.15)]"
+      >
         {passwordSuccess && (
-          <div className="mb-4 flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 p-3 text-xs font-medium text-emerald-800">
+          <div className="mb-4 flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-950/40 p-3 text-xs font-medium text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)] animate-fade-in">
             <CheckCircle2 size={15} />
             <span>{passwordSuccess}</span>
           </div>
         )}
 
         {passwordError && (
-          <div className="mb-4 flex items-center gap-2 rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+          <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-500/40 bg-rose-950/40 p-3 text-xs text-rose-300 animate-fade-in">
             <AlertCircle size={15} />
             <span>{passwordError}</span>
           </div>
@@ -176,7 +184,7 @@ export function SettingsPage({ user }: SettingsPageProps) {
             placeholder="••••••••"
             value={oldPassword}
             onChange={(e) => setOldPassword(e.target.value)}
-            icon={<Lock size={15} />}
+            icon={<Lock size={15} className="text-emerald-400" />}
             required
           />
 
@@ -186,7 +194,7 @@ export function SettingsPage({ user }: SettingsPageProps) {
             placeholder="••••••••"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            icon={<Lock size={15} />}
+            icon={<Lock size={15} className="text-emerald-400" />}
             required
           />
 
@@ -196,7 +204,7 @@ export function SettingsPage({ user }: SettingsPageProps) {
             placeholder="••••••••"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            icon={<Lock size={15} />}
+            icon={<Lock size={15} className="text-emerald-400" />}
             required
           />
 

@@ -1,6 +1,7 @@
 import React, { FormEvent, useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, GitBranch, Github, RefreshCw, Sparkles } from "lucide-react";
 import { RemoteRepository, Repository as RepoType } from "../types";
+import { useAuth } from "../hooks/useAuth";
 import { githubApi } from "../services/githubApi";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -25,8 +26,15 @@ export function RepositoryPage({
   showImportModal,
   setShowImportModal,
 }: RepositoryPageProps) {
+  const { user } = useAuth();
   const [importMode, setImportMode] = useState<"select" | "manual">("select");
-  const [githubUsername, setGithubUsername] = useState("Ajaymallavali");
+  const [githubUsername, setGithubUsername] = useState(user?.githubUsername || "Ajaymallavali");
+
+  useEffect(() => {
+    if (user?.githubUsername) {
+      setGithubUsername(user.githubUsername);
+    }
+  }, [user?.githubUsername]);
   const [remoteRepos, setRemoteRepos] = useState<RemoteRepository[]>([]);
   const [isLoadingRemote, setIsLoadingRemote] = useState(false);
   const [remoteError, setRemoteError] = useState("");
@@ -122,12 +130,12 @@ export function RepositoryPage({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Top Header Card */}
-      <div className="rounded border border-slate-200 bg-white p-5 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="rounded-lg border border-[#1b273d] bg-[#0d1424] p-5 shadow-cyber flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 transition-all duration-300 hover:border-emerald-500/40 hover:shadow-[0_0_20px_rgba(16,185,129,0.15)] hover:scale-[1.008]">
         <div>
-          <h2 className="text-base font-bold text-slate-900">Your Imported Repositories</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <h2 className="text-base font-bold text-slate-100 tracking-tight">Your Imported Repositories</h2>
+          <p className="text-xs text-slate-400 mt-1">
             Select a codebase to view its dashboard, audit AST issues, or run automated PR reviews.
           </p>
         </div>
@@ -147,27 +155,29 @@ export function RepositoryPage({
 
       {/* Import Modal */}
       {showImportModal && (
-        <Card className="border-teal-200 bg-teal-50/40 p-6 space-y-4">
-          <div className="flex items-center justify-between border-b border-teal-200 pb-3">
+        <Card className="border border-emerald-500/30 bg-[#0d1424] p-6 space-y-4 shadow-[0_0_30px_rgba(0,0,0,0.8)] animate-fade-in-up">
+          <div className="flex items-center justify-between border-b border-[#1b273d] pb-3">
             <div className="flex items-center gap-2">
-              <Github size={18} className="text-teal-800" />
-              <h3 className="font-bold text-sm text-slate-900">Import GitHub Repository</h3>
+              <Github size={18} className="text-emerald-400" />
+              <h3 className="font-bold text-sm text-slate-100">Import GitHub Repository</h3>
             </div>
             <button
               onClick={() => setShowImportModal(false)}
-              className="text-xs text-slate-400 hover:text-slate-600 font-semibold"
+              className="text-xs text-slate-400 hover:text-emerald-400 font-semibold transition-colors"
             >
               ✕ Close
             </button>
           </div>
 
           {/* Mode Switcher */}
-          <div className="flex gap-4 border-b border-slate-200 pb-2">
+          <div className="flex gap-4 border-b border-[#1b273d] pb-2">
             <button
               type="button"
               onClick={() => setImportMode("select")}
-              className={`pb-1 text-xs font-semibold ${
-                importMode === "select" ? "border-b-2 border-teal-800 text-teal-900" : "text-slate-500"
+              className={`pb-1 text-xs font-semibold transition-colors cursor-pointer ${
+                importMode === "select"
+                  ? "border-b-2 border-emerald-400 text-emerald-300"
+                  : "text-slate-400 hover:text-slate-200"
               }`}
             >
               Choose from my Repositories
@@ -175,8 +185,10 @@ export function RepositoryPage({
             <button
               type="button"
               onClick={() => setImportMode("manual")}
-              className={`pb-1 text-xs font-semibold ${
-                importMode === "manual" ? "border-b-2 border-teal-800 text-teal-900" : "text-slate-500"
+              className={`pb-1 text-xs font-semibold transition-colors cursor-pointer ${
+                importMode === "manual"
+                  ? "border-b-2 border-emerald-400 text-emerald-300"
+                  : "text-slate-400 hover:text-slate-200"
               }`}
             >
               Import by Name (Public / Custom)
@@ -184,14 +196,14 @@ export function RepositoryPage({
           </div>
 
           {importSuccess && (
-            <div className="flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 font-medium">
+            <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-950/40 p-3 text-xs text-emerald-300 font-medium animate-fade-in">
               <CheckCircle2 size={16} />
               <span>{importSuccess}</span>
             </div>
           )}
 
           {error && (
-            <div className="flex items-center gap-2 rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+            <div className="flex items-center gap-2 rounded-md border border-rose-500/40 bg-rose-950/40 p-3 text-xs text-rose-300 animate-fade-in">
               <AlertCircle size={16} />
               <span>{error}</span>
             </div>
@@ -199,11 +211,11 @@ export function RepositoryPage({
 
           <form onSubmit={handleImportSubmit} className="space-y-4">
             {importMode === "select" ? (
-              <div className="space-y-3">
+              <div key="select-mode" className="space-y-3 animate-page-enter">
                 {/* GitHub Account Fetch Bar */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2.5 bg-slate-50 rounded border border-slate-200">
-                  <div className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold shrink-0">
-                    <Github size={15} className="text-slate-900" />
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-[#070b13] rounded-md border border-[#1c293e]">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-300 font-semibold shrink-0">
+                    <Github size={15} className="text-emerald-400" />
                     <span>GitHub Account:</span>
                   </div>
                   <input
@@ -211,7 +223,7 @@ export function RepositoryPage({
                     value={githubUsername}
                     onChange={(e) => setGithubUsername(e.target.value)}
                     placeholder="e.g. Ajaymallavali"
-                    className="flex-1 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs focus:border-slate-900 outline-none"
+                    className="flex-1 rounded border border-[#1c293e] bg-[#05080f] px-2.5 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/40 outline-none transition"
                   />
                   <Button
                     type="button"
@@ -227,21 +239,21 @@ export function RepositoryPage({
                 {isLoadingRemote ? (
                   <Loader message={`Loading repositories for ${githubUsername}...`} size="sm" />
                 ) : remoteError ? (
-                  <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  <div className="rounded border border-amber-500/40 bg-amber-950/40 p-3 text-xs text-amber-300">
                     <p className="font-semibold mb-1">GitHub Fetch Notice:</p>
                     <p>{remoteError}</p>
-                    <p className="mt-1 text-[11px] text-amber-700">
+                    <p className="mt-1 text-[11px] text-amber-400">
                       You can also use the <strong>Import by Name</strong> tab to directly import any public repository.
                     </p>
                   </div>
                 ) : null}
 
                 {remoteRepos.length > 0 && (
-                  <div className="grid gap-4 sm:grid-cols-2 pt-1">
+                  <div className="grid gap-4 sm:grid-cols-2 pt-1 animate-fade-in-up">
                     <label className="block">
-                      <span className="block text-xs font-medium text-slate-700 mb-1">Select Remote Repository</span>
+                      <span className="block text-xs font-medium text-slate-300 mb-1">Select Remote Repository</span>
                       <select
-                        className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-xs focus:border-slate-900 outline-none"
+                        className="w-full rounded border border-[#1c293e] bg-[#070b13] px-3 py-2 text-xs text-slate-100 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/40 outline-none transition cursor-pointer"
                         value={selectedRemote?.id || ""}
                         onChange={(e) => {
                           const target = remoteRepos.find((r) => r.id.toString() === e.target.value);
@@ -253,7 +265,7 @@ export function RepositoryPage({
                         required
                       >
                         {remoteRepos.map((r) => (
-                          <option key={r.id} value={r.id}>
+                          <option key={r.id} value={r.id} className="bg-[#070b13] text-slate-100">
                             {r.fullName || r.full_name || r.name} ({r.language || "Other"})
                           </option>
                         ))}
@@ -261,15 +273,15 @@ export function RepositoryPage({
                     </label>
 
                     <label className="block">
-                      <span className="block text-xs font-medium text-slate-700 mb-1">Default Branch</span>
+                      <span className="block text-xs font-medium text-slate-300 mb-1">Default Branch</span>
                       <select
-                        className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-xs focus:border-slate-900 outline-none"
+                        className="w-full rounded border border-[#1c293e] bg-[#070b13] px-3 py-2 text-xs text-slate-100 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/40 outline-none transition cursor-pointer"
                         value={selectedBranch}
                         onChange={(e) => setSelectedBranch(e.target.value)}
                         disabled={isLoadingBranches}
                       >
                         {branches.map((b) => (
-                          <option key={b} value={b}>
+                          <option key={b} value={b} className="bg-[#070b13] text-slate-100">
                             {b}
                           </option>
                         ))}
@@ -279,32 +291,32 @@ export function RepositoryPage({
                 )}
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div key="manual-mode" className="grid gap-4 sm:grid-cols-2 animate-page-enter">
                 <label className="block">
-                  <span className="block text-xs font-medium text-slate-700 mb-1">Repository Full Name</span>
+                  <span className="block text-xs font-medium text-slate-300 mb-1">Repository Full Name</span>
                   <input
                     type="text"
                     placeholder="e.g. pallets/flask or owner/repo"
                     value={manualName}
                     onChange={(e) => setManualName(e.target.value)}
-                    className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-xs focus:border-slate-900 outline-none"
+                    className="w-full rounded border border-[#1c293e] bg-[#070b13] px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/40 outline-none transition"
                     required
                   />
                 </label>
                 <label className="block">
-                  <span className="block text-xs font-medium text-slate-700 mb-1">Branch</span>
+                  <span className="block text-xs font-medium text-slate-300 mb-1">Branch</span>
                   <input
                     type="text"
                     placeholder="main"
                     value={selectedBranch}
                     onChange={(e) => setSelectedBranch(e.target.value)}
-                    className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-xs focus:border-slate-900 outline-none"
+                    className="w-full rounded border border-[#1c293e] bg-[#070b13] px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/40 outline-none transition"
                   />
                 </label>
               </div>
             )}
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#1b273d]">
               <Button type="button" variant="outline" size="sm" onClick={() => setShowImportModal(false)}>
                 Cancel
               </Button>
@@ -320,7 +332,7 @@ export function RepositoryPage({
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px] border-b border-slate-200">
+            <thead className="bg-[#080d17] text-slate-400 uppercase tracking-wider text-[10px] border-b border-[#1b273d]">
               <tr>
                 <th className="py-3 px-4">Repository</th>
                 <th className="py-3 px-4">Default Branch</th>
@@ -329,10 +341,10 @@ export function RepositoryPage({
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[#172235]">
               {importedRepos.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400">
+                  <td colSpan={5} className="py-8 text-center text-slate-500">
                     No repositories imported yet. Click &apos;Add GitHub Repo&apos; above to get started.
                   </td>
                 </tr>
@@ -340,29 +352,34 @@ export function RepositoryPage({
                 importedRepos.map((repo) => {
                   const isSelected = activeRepo?.id === repo.id;
                   return (
-                    <tr key={repo.id} className={`hover:bg-slate-50 transition ${isSelected ? "bg-teal-50/40" : ""}`}>
+                    <tr
+                      key={repo.id}
+                      className={`hover:bg-[#11192b] transition-all duration-200 transform hover:scale-[1.006] ${
+                        isSelected ? "bg-emerald-950/25 border-l-2 border-emerald-400" : ""
+                      }`}
+                    >
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          <GitBranch size={16} className={isSelected ? "text-teal-700" : "text-slate-400"} />
+                        <div className="flex items-center gap-2.5">
+                          <GitBranch size={16} className={isSelected ? "text-emerald-400" : "text-slate-500"} />
                           <div>
-                            <span className="font-bold text-slate-900">{repo.fullName || repo.name}</span>
+                            <span className="font-bold text-slate-100">{repo.fullName || repo.name}</span>
                             {isSelected && (
-                              <span className="ml-2 rounded-full bg-teal-100 px-2 py-0.2 text-[9px] font-semibold text-teal-800">
+                              <span className="ml-2 rounded-full bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.2 text-[9px] font-semibold text-emerald-300 font-mono">
                                 Active
                               </span>
                             )}
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 px-4 font-mono text-[11px] text-slate-600">{repo.defaultBranch}</td>
+                      <td className="py-3 px-4 font-mono text-[11px] text-emerald-400">{repo.defaultBranch}</td>
                       <td className="py-3 px-4">
-                        <span className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] text-slate-700 font-medium">
+                        <span className="rounded bg-[#070b13] border border-[#1c293e] px-2 py-0.5 text-[10px] text-slate-300 font-medium">
                           {repo.language || "Python"}
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-800">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-950/70 border border-emerald-500/40 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300 font-mono">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#00ff88]" />
                           Ready
                         </span>
                       </td>
@@ -372,7 +389,7 @@ export function RepositoryPage({
                             onSelectRepo(repo);
                             onNavigateToDashboard();
                           }}
-                          className="font-semibold text-teal-700 hover:text-teal-900 transition text-xs"
+                          className="font-semibold text-emerald-400 hover:text-emerald-300 transition-all duration-150 transform hover:scale-110 hover:translate-x-1 inline-block text-xs cursor-pointer"
                         >
                           View Dashboard &rarr;
                         </button>

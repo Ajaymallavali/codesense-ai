@@ -14,6 +14,11 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT / "backend") not in sys.path:
     sys.path.insert(0, str(ROOT / "backend"))
 
+import app
+ai_app_path = str(ROOT / "ai-service" / "app")
+if ai_app_path not in app.__path__:
+    app.__path__.append(ai_app_path)
+
 from app.main import app as backend_app
 from app.security import create_token
 

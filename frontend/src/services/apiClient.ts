@@ -1,6 +1,13 @@
 import { ApiErrorResponse } from "../types";
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8050/api";
+const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL;
+export const API_BASE_URL = (
+  configuredBaseUrl && configuredBaseUrl.trim() !== ""
+    ? configuredBaseUrl.trim()
+    : (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
+        ? "/api"
+        : "http://localhost:8050/api")
+).replace(/\/+$/, "");
 export const AUTH_STORAGE_KEY = "codesense.auth";
 
 export class ApiError extends Error {

@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 import logging
+import time
 
 import psycopg
 from psycopg.rows import dict_row
@@ -9,11 +10,30 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+_DB_LAST_FAIL_TIME: float = 0.0
+_DB_FAIL_COOLDOWN_SEC: float = 25.0
+
+
+class DatabaseCircuitOpen(Exception):
+    """Raised when database is recently unreachable to avoid blocking socket timeouts."""
+    pass
+
 
 @contextmanager
 def get_connection() -> Iterator[psycopg.Connection]:
-    with psycopg.connect(settings.database_url, connect_timeout=2, row_factory=dict_row) as connection:
-        yield connection
+    global _DB_LAST_FAIL_TIME
+    now = time.time()
+    # Fast-fail if database failed within cooldown period
+    if now - _DB_LAST_FAIL_TIME < _DB_FAIL_COOLDOWN_SEC:
+        raise DatabaseCircuitOpen("Database circuit open (fast fallback to dev_store)")
+
+    try:
+        with psycopg.connect(settings.database_url, connect_timeout=1, row_factory=dict_row) as connection:
+            _DB_LAST_FAIL_TIME = 0.0
+            yield connection
+    except Exception:
+        _DB_LAST_FAIL_TIME = time.time()
+        raise
 
 
 def initialize_database() -> None:
@@ -91,6 +111,50 @@ def initialize_database() -> None:
           user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           role VARCHAR(50) NOT NULL DEFAULT 'MEMBER',
           created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS conversations (
+          id VARCHAR(255) PRIMARY KEY,
+          repository_id UUID REFERENCES repositories(id) ON DELETE SET NULL,
+          user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title VARCHAR(255),
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS conversation_messages (
+          id UUID PRIMARY KEY,
+          conversation_id VARCHAR(255) NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+          role VARCHAR(50) NOT NULL,
+          content TEXT NOT NULL,
+          citations TEXT,
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS reports (
+          id UUID PRIMARY KEY,
+          repository_id UUID NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+          owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          report_type VARCHAR(50) NOT NULL DEFAULT 'assessment',
+          format VARCHAR(20) NOT NULL DEFAULT 'pdf',
+          analysis_id UUID REFERENCES analyses(id) ON DELETE SET NULL,
+          maintainability_score INTEGER NOT NULL DEFAULT 0,
+          technical_debt_hours INTEGER NOT NULL DEFAULT 0,
+          findings_count INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS indexing_metadata (
+          id UUID PRIMARY KEY,
+          repository_id UUID NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+          commit_sha VARCHAR(64) NOT NULL,
+          chunks_count INTEGER NOT NULL DEFAULT 0,
+          indexed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+          CONSTRAINT uq_repo_commit_index UNIQUE (repository_id, commit_sha)
         )
         """,
     ]

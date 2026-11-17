@@ -13,9 +13,56 @@ class AiClientError(Exception):
     pass
 
 
+class ChatResult(str):
+    """
+    Subclasses str for 100% backward compatibility with callers expecting str,
+    while also exposing .citations, .conversation_id, and dict-like .get() / subscription.
+    """
+    def __new__(
+        cls,
+        text: str,
+        citations: list[dict[str, Any]] | None = None,
+        conversation_id: str | None = None,
+        provider: str = "deterministic-rag"
+    ):
+        obj = super().__new__(cls, text)
+        obj.response = text
+        obj.answer = text
+        obj.citations = citations or []
+        obj.conversation_id = conversation_id
+        obj.provider = provider
+        return obj
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key in ("response", "answer"):
+            return str(self)
+        if key == "citations":
+            return self.citations
+        if key == "conversation_id":
+            return self.conversation_id
+        if key == "provider":
+            return self.provider
+        return default
+
+    def __getitem__(self, item: Any) -> Any:
+        if isinstance(item, str):
+            if item in ("response", "answer"):
+                return str(self)
+            if item == "citations":
+                return self.citations
+            if item == "conversation_id":
+                return self.conversation_id
+            if item == "provider":
+                return self.provider
+        return super().__getitem__(item)
+
+
 class AiClient:
     def __init__(self, base_url: str | None = None):
-        self.base_url = (base_url or settings.ai_service_url).rstrip("/")
+        raw = (base_url or settings.ai_service_url).strip().rstrip("/")
+        if not raw.startswith("http://") and not raw.startswith("https://"):
+            raw = f"http://{raw}"
+        self.base_url = raw
 
     async def check_health(self) -> dict[str, Any]:
         """Check if AI Service is responsive."""
@@ -67,7 +114,10 @@ class AiClient:
         findings: list[dict[str, Any]] | None = None,
         code_context: str | None = None,
         github_token: str | None = None,
-    ) -> str:
+        conversation_id: str | None = None,
+        commit_sha: str | None = None,
+        conversation_history: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """Forward repository context chat query to AI Service."""
         payload = {
             "repository_url": repo_url,
@@ -78,18 +128,75 @@ class AiClient:
             "technical_debt_hours": technical_debt_hours,
             "findings": findings,
             "code_context": code_context,
+            "conversation_id": conversation_id,
+            "commit_sha": commit_sha,
+            "conversation_history": conversation_history,
         }
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 res = await client.post(f"{self.base_url}/chat", json=payload)
                 if res.is_success:
                     data = res.json()
-                    return data.get("response", "No response text returned.")
+                    resp_text = data.get("response", data.get("answer", ""))
+                    return ChatResult(
+                        text=resp_text,
+                        citations=data.get("citations", []),
+                        conversation_id=data.get("conversation_id", conversation_id),
+                        provider=data.get("provider", "deterministic-rag"),
+                    )
                 logger.warning(f"AI Service chat error {res.status_code}: {res.text}")
-                return f"AI Service response error ({res.status_code}): {res.text}"
+                error_msg = f"AI Service response error ({res.status_code}): {res.text}"
+                return ChatResult(text=error_msg, citations=[], conversation_id=conversation_id)
         except Exception as exc:
             logger.error(f"AI Service chat failed: {exc}")
-            return f"Unable to reach CodeSense AI service: {str(exc)}"
+            error_msg = f"Unable to reach CodeSense AI service: {str(exc)}"
+            return ChatResult(text=error_msg, citations=[], conversation_id=conversation_id)
+
+    async def generate_pdf_report(self, payload: dict[str, Any]) -> bytes:
+        """Call AI Service to generate a ReportLab PDF audit report."""
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                res = await client.post(f"{self.base_url}/reports/pdf", json=payload)
+                if not res.is_success:
+                    raise AiClientError(f"PDF generation failed ({res.status_code}): {res.text}")
+                return res.content
+        except httpx.RequestError as exc:
+            raise AiClientError(f"Failed to connect to AI Service for PDF generation: {exc}") from exc
+
+    async def generate_pptx_report(self, payload: dict[str, Any]) -> bytes:
+        """Call AI Service to generate a python-pptx PowerPoint audit deck."""
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                res = await client.post(f"{self.base_url}/reports/pptx", json=payload)
+                if not res.is_success:
+                    raise AiClientError(f"PPTX generation failed ({res.status_code}): {res.text}")
+                return res.content
+        except httpx.RequestError as exc:
+            raise AiClientError(f"Failed to connect to AI Service for PPTX generation: {exc}") from exc
+
+    async def retrieve_rag(
+        self,
+        repo_id: str,
+        query: str,
+        commit_sha: str | None = None,
+        top_k: int = 5,
+    ) -> dict[str, Any]:
+        """Retrieve hybrid RAG chunks and structured citations from AI Service."""
+        payload = {
+            "repository_id": repo_id,
+            "query": query,
+            "commit_sha": commit_sha,
+            "top_k": top_k,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                res = await client.post(f"{self.base_url}/rag/retrieve", json=payload)
+                if res.is_success:
+                    return res.json()
+                return {"context_block": "", "citations": []}
+        except Exception as exc:
+            logger.warning(f"RAG retrieve failed: {exc}")
+            return {"context_block": "", "citations": []}
 
     async def explain(
         self,

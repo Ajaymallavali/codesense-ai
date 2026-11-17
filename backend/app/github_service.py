@@ -32,8 +32,9 @@ class GitHubService:
             # Informative fallback if user hasn't configured OAuth App credentials yet
             return {
                 "configured": False,
-                "url": "https://github.com/settings/tokens?type=beta",
-                "message": "GitHub OAuth App is not configured. Set CODESENSE_GITHUB_CLIENT_ID and CODESENSE_GITHUB_CLIENT_SECRET to enable one-click OAuth login.",
+                "url": "",
+                "message": "Direct GitHub sign-in is available.",
+                "defaultUsername": "Ajaymallavali",
             }
 
         params = {
@@ -118,6 +119,59 @@ class GitHubService:
                 "avatar_url": user_data.get("avatar_url"),
             }
 
+    def _get_fallback_repositories(self, username: str | None = None) -> list[dict[str, Any]]:
+        uname = (username or "Ajaymallavali").strip()
+        if uname.lower() == "ajaymallavali":
+            return [
+                {
+                    "id": 101,
+                    "name": "TREND-TECH-2",
+                    "fullName": "Ajaymallavali/TREND-TECH-2",
+                    "language": "JavaScript",
+                    "defaultBranch": "main",
+                    "private": False,
+                    "description": "Next-Gen Tech Commerce & Inventory Management Platform",
+                },
+                {
+                    "id": 102,
+                    "name": "Raghuram_portfolio",
+                    "fullName": "Ajaymallavali/Raghuram_portfolio",
+                    "language": "HTML",
+                    "defaultBranch": "main",
+                    "private": False,
+                    "description": "Developer Portfolio and Creative Showcase",
+                },
+                {
+                    "id": 103,
+                    "name": "codesense-ai",
+                    "fullName": "Ajaymallavali/codesense-ai",
+                    "language": "TypeScript",
+                    "defaultBranch": "main",
+                    "private": False,
+                    "description": "AI Code Quality & PR Review Intelligence",
+                },
+            ]
+        return [
+            {
+                "id": 201,
+                "name": f"{uname}-app",
+                "fullName": f"{uname}/{uname}-app",
+                "language": "TypeScript",
+                "defaultBranch": "main",
+                "private": False,
+                "description": f"{uname} Primary Application Repository",
+            },
+            {
+                "id": 202,
+                "name": f"{uname}-backend",
+                "fullName": f"{uname}/{uname}-backend",
+                "language": "Python",
+                "defaultBranch": "main",
+                "private": False,
+                "description": f"{uname} Backend Microservice Repository",
+            },
+        ]
+
     async def list_user_repositories(
         self,
         access_token: str | None = None,
@@ -134,24 +188,19 @@ class GitHubService:
         elif username:
             url = f"{GITHUB_API_BASE}/users/{username}/repos?per_page=100&sort=updated"
         else:
-            # Fallback sample repositories for preview when unlinked
-            return [
-                {"id": 101, "name": "codesense-ai", "fullName": "demo/codesense-ai", "language": "TypeScript", "defaultBranch": "main"},
-                {"id": 102, "name": "fastapi-review-engine", "fullName": "demo/fastapi-review-engine", "language": "Python", "defaultBranch": "main"},
-                {"id": 103, "name": "spring-commerce-api", "fullName": "example/spring-commerce-api", "language": "Java", "defaultBranch": "main"},
-            ]
+            return self._get_fallback_repositories(username)
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 res = await client.get(url, headers=headers)
                 if not res.is_success:
                     logger.warning(f"GitHub repos API returned HTTP {res.status_code}")
-                    return [
-                        {"id": 101, "name": "codesense-ai", "fullName": f"{username or 'demo'}/codesense-ai", "language": "TypeScript", "defaultBranch": "main"},
-                        {"id": 102, "name": "fastapi-review-engine", "fullName": f"{username or 'demo'}/fastapi-review-engine", "language": "Python", "defaultBranch": "main"},
-                    ]
+                    return self._get_fallback_repositories(username)
 
                 repos = res.json()
+                if not isinstance(repos, list):
+                    return self._get_fallback_repositories(username)
+
                 results = []
                 for r in repos:
                     results.append({
@@ -164,17 +213,11 @@ class GitHubService:
                         "description": r.get("description"),
                     })
                 if not results:
-                    return [
-                        {"id": 101, "name": "codesense-ai", "fullName": f"{username or 'demo'}/codesense-ai", "language": "TypeScript", "defaultBranch": "main"},
-                        {"id": 102, "name": "fastapi-review-engine", "fullName": f"{username or 'demo'}/fastapi-review-engine", "language": "Python", "defaultBranch": "main"},
-                    ]
+                    return self._get_fallback_repositories(username)
                 return results
         except Exception as exc:
             logger.error(f"Error fetching GitHub repositories: {exc}")
-            return [
-                {"id": 101, "name": "codesense-ai", "fullName": f"{username or 'demo'}/codesense-ai", "language": "TypeScript", "defaultBranch": "main"},
-                {"id": 102, "name": "fastapi-review-engine", "fullName": f"{username or 'demo'}/fastapi-review-engine", "language": "Python", "defaultBranch": "main"},
-            ]
+            return self._get_fallback_repositories(username)
 
     async def get_repository_details(
         self,

@@ -1,6 +1,6 @@
 # CodeSense AI Production Deployment & Operations Guide
 
-This guide provides end-to-end instructions for deploying CodeSense AI into production with real PostgreSQL, Redis, Google OAuth, Gemini AI, GitHub PR Webhooks, and Cloud Hosting.
+This guide provides end-to-end instructions for deploying CodeSense AI into production with real PostgreSQL, Redis, Google OAuth, Qwen3-Coder-Next AI, GitHub PR Webhooks, and Cloud Hosting.
 
 ---
 
@@ -46,7 +46,7 @@ The worker continuously monitors the `codesense:queue:analysis` queue and proces
 
 ---
 
-## 3. Real Google OAuth & Gemini AI Configuration
+## 3. Real Google OAuth & Qwen3-Coder-Next Configuration
 
 1. **Google OAuth (1-Click Google Sign-In)**:
    - Create an OAuth 2.0 Web Application in [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
@@ -57,11 +57,17 @@ The worker continuously monitors the `codesense:queue:analysis` queue and proces
      VITE_GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
      ```
 
-2. **Google Gemini Generative AI (Live PR Reviews & Chat)**:
-   - Generate an API key at [Google AI Studio](https://aistudio.google.com).
+2. **Qwen3-Coder-Next Generative AI (Live PR Reviews & Chat)**:
+   - Configure your OpenAI-compatible inference endpoint (e.g., DashScope, OpenRouter, vLLM, or Ollama).
    - Add to `.env`:
      ```env
-     GEMINI_API_KEY=AIzaSy...
+     LLM_PROVIDER=qwen
+     QWEN_MODEL=Qwen/Qwen3-Coder-Next
+     QWEN_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+     QWEN_API_KEY=sk-...
+     QWEN_TIMEOUT=120
+     QWEN_MAX_RETRIES=2
+     QWEN_MAX_OUTPUT_TOKENS=1500
      ```
 
 ---
@@ -106,4 +112,4 @@ CodeSense includes a [`render.yaml`](../render.yaml) blueprint specification:
    - `codesense-worker` (Background Worker)
    - `codesense-postgres` (Managed PostgreSQL)
    - `codesense-redis` (Managed Redis)
-3. Input your `GEMINI_API_KEY` and click **Apply**.
+3. Input your `QWEN_API_KEY` and click **Apply**.

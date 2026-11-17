@@ -1,13 +1,28 @@
 import { request } from "./apiClient";
-import { PrReviewData } from "../types";
+import { Citation, PrReviewData } from "../types";
+
+export interface ChatResponse {
+  response: string;
+  answer?: string;
+  citations?: Citation[];
+  conversationId?: string;
+  provider?: string;
+}
 
 export const aiApi = {
-  async chat(repositoryId: string | undefined, query: string): Promise<{ response: string; answer?: string }> {
-    return request<{ response: string; answer?: string }>("/ai/chat", {
+  async chat(
+    repositoryId: string | undefined,
+    query: string,
+    conversationId?: string,
+    messages?: { role: string; content?: string; text?: string }[]
+  ): Promise<ChatResponse> {
+    return request<ChatResponse>("/ai/chat", {
       method: "POST",
       body: JSON.stringify({
         repositoryId,
         query,
+        conversationId,
+        messages,
       }),
     });
   },
@@ -19,6 +34,30 @@ export const aiApi = {
         findingId,
         code,
       }),
+    });
+  },
+
+  async getConversation(conversationId: string): Promise<{
+    conversationId: string;
+    messages: { role: string; content: string; citations?: Citation[]; timestamp?: string }[];
+  }> {
+    return request<{
+      conversationId: string;
+      messages: { role: string; content: string; citations?: Citation[]; timestamp?: string }[];
+    }>(`/ai/conversations/${conversationId}`, {
+      method: "GET",
+    });
+  },
+
+  async getLatestConversation(repositoryId: string): Promise<{
+    conversationId: string | null;
+    messages: { role: string; content: string; citations?: Citation[]; timestamp?: string }[];
+  }> {
+    return request<{
+      conversationId: string | null;
+      messages: { role: string; content: string; citations?: Citation[]; timestamp?: string }[];
+    }>(`/ai/conversations/latest?repositoryId=${encodeURIComponent(repositoryId)}`, {
+      method: "GET",
     });
   },
 

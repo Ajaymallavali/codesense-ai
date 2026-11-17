@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 REDIS_QUEUE_KEY = "codesense:queue:analysis"
 REDIS_JOB_PREFIX = "codesense:job:"
+REDIS_CACHE_PREFIX = "codesense:cache:analysis:"
 
 
 def get_redis_client() -> redis.Redis | None:
@@ -32,6 +33,45 @@ def get_redis_client() -> redis.Redis | None:
     except Exception as exc:
         logger.debug(f"Redis is not available: {exc}")
         return None
+
+
+def cache_latest_analysis(repo_id: str, data: dict[str, Any], ttl_seconds: int = 3600) -> None:
+    """Caches non-sensitive analysis summary in Redis."""
+    client = get_redis_client()
+    if client is None:
+        return
+    try:
+        key = f"{REDIS_CACHE_PREFIX}{repo_id}"
+        client.set(key, json.dumps(data), ex=ttl_seconds)
+    except Exception as exc:
+        logger.debug("Failed caching analysis in Redis: %s", exc)
+
+
+def get_cached_latest_analysis(repo_id: str) -> dict[str, Any] | None:
+    """Retrieves cached analysis summary from Redis if available."""
+    client = get_redis_client()
+    if client is None:
+        return None
+    try:
+        key = f"{REDIS_CACHE_PREFIX}{repo_id}"
+        val = client.get(key)
+        if val:
+            return json.loads(val)
+    except Exception as exc:
+        logger.debug("Failed reading cached analysis from Redis: %s", exc)
+    return None
+
+
+def invalidate_analysis_cache(repo_id: str) -> None:
+    """Invalidates analysis cache for a repository upon new scan trigger."""
+    client = get_redis_client()
+    if client is None:
+        return
+    try:
+        key = f"{REDIS_CACHE_PREFIX}{repo_id}"
+        client.delete(key)
+    except Exception as exc:
+        logger.debug("Failed invalidating analysis cache in Redis: %s", exc)
 
 
 def check_redis_health() -> dict[str, Any]:
@@ -102,15 +142,19 @@ async def process_analysis_job(analysis_id: UUID) -> None:
                     logger.info(f"Analysis job {str_id} is already in state {row['status']}.")
                     return
 
-                # Step 2: Transition PENDING -> SCANNING
-                connection.execute(
+                # Step 2: Transition PENDING -> SCANNING atomically
+                claim = connection.execute(
                     """
                     UPDATE analyses
                     SET status = 'SCANNING', progress = 35
-                    WHERE id = %s
+                    WHERE id = %s AND status = 'PENDING'
+                    RETURNING id
                     """,
                     (analysis_id,),
-                )
+                ).fetchone()
+                if not claim and row["status"] != "PENDING":
+                    logger.info(f"Analysis job {str_id} already claimed by another worker.")
+                    return
                 connection.commit()
     except Exception as db_exc:
         logger.debug(f"Database unavailable for job {str_id}: {db_exc}; checking dev_store")
@@ -252,18 +296,22 @@ async def process_analysis_job(analysis_id: UUID) -> None:
 
 def dispatch_analysis_job(analysis_id: UUID, background_tasks: BackgroundTasks) -> None:
     """
-    Queue the analysis job in Redis if available, and schedule async execution
-    using FastAPI's BackgroundTasks worker.
+    Queue the analysis job in Redis if available; fall back to FastAPI BackgroundTasks
+    only when Redis is offline, eliminating double-execution race conditions.
     """
     str_id = str(analysis_id)
     client = get_redis_client()
+    dispatched_to_redis = False
+
     if client is not None:
         try:
             client.lpush(REDIS_QUEUE_KEY, json.dumps({"analysis_id": str_id}))
             _update_redis_job_status(str_id, "PENDING", progress=5)
             logger.info(f"Dispatched analysis {str_id} to Redis queue: {REDIS_QUEUE_KEY}")
+            dispatched_to_redis = True
         except Exception as exc:
             logger.warning(f"Could not push to Redis queue: {exc}")
 
-    # Schedule async background task
-    background_tasks.add_task(process_analysis_job, analysis_id)
+    if not dispatched_to_redis:
+        # Schedule async background task only when Redis queue is offline
+        background_tasks.add_task(process_analysis_job, analysis_id)

@@ -4,10 +4,6 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/api/:match*",
-      "destination": "https://api.codesense.ai/api/:match*"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

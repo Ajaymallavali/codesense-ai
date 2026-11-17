@@ -22,6 +22,13 @@ services:
     container_name: codesense-redis
     ports:
       - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   ai-service:
     build:
@@ -30,6 +37,19 @@ services:
     container_name: codesense-ai-service
     environment:
       CODESENSE_ENV: development
+      LLM_PROVIDER: ${LLM_PROVIDER:-cloudflare}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      CLOUDFLARE_MODEL: ${CLOUDFLARE_MODEL:-@cf/qwen/qwen2.5-coder-32b-instruct}
+      CLOUDFLARE_TIMEOUT: ${CLOUDFLARE_TIMEOUT:-120}
+      CLOUDFLARE_MAX_RETRIES: ${CLOUDFLARE_MAX_RETRIES:-2}
+      CLOUDFLARE_MAX_OUTPUT_TOKENS: ${CLOUDFLARE_MAX_OUTPUT_TOKENS:-1500}
+      QWEN_MODEL: ${QWEN_MODEL:-Qwen/Qwen3-Coder-Next}
+      QWEN_BASE_URL: ${QWEN_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      QWEN_TIMEOUT: ${QWEN_TIMEOUT:-120}
+      QWEN_MAX_RETRIES: ${QWEN_MAX_RETRIES:-2}
+      QWEN_MAX_OUTPUT_TOKENS: ${QWEN_MAX_OUTPUT_TOKENS:-1500}
     ports:
       - "8000:8000"
 
@@ -67,3 +87,4 @@ services:
 
 volumes:
   postgres-data:
+  redis-data:

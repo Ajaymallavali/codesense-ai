@@ -8,7 +8,12 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from app.api.common import analysis_response, finding_response
 from app.database import get_connection
 from app.dev_store import dev_store
-from app.jobs import dispatch_analysis_job
+from app.jobs import (
+    dispatch_analysis_job,
+    get_cached_latest_analysis,
+    cache_latest_analysis,
+    invalidate_analysis_cache,
+)
 from app.schemas import AnalysisResponse, FindingResponse, TriggerAnalysisRequest
 from app.security import get_current_user
 
@@ -34,6 +39,10 @@ def latest_analysis(
     repositoryId: UUID,
     current_user: dict[str, Any] = Depends(get_current_user),
 ) -> AnalysisResponse | None:
+    cached = get_cached_latest_analysis(str(repositoryId))
+    if cached:
+        return analysis_response(cached)
+
     try:
         with get_connection() as connection:
             row = connection.execute(
@@ -49,6 +58,7 @@ def latest_analysis(
                 (repositoryId, current_user["id"]),
             ).fetchone()
             if row:
+                cache_latest_analysis(str(repositoryId), dict(row))
                 return analysis_response(row)
     except Exception as exc:
         logger.debug("Database unavailable for latest_analysis: %s", exc)
@@ -106,6 +116,7 @@ def trigger_analysis(
                 (analysis_id, repo_id, branch),
             ).fetchone()
             connection.commit()
+            invalidate_analysis_cache(str(repo_id))
             dispatch_analysis_job(analysis_id, background_tasks)
             return analysis_response(row)
     except Exception as exc:
@@ -253,7 +264,7 @@ def analysis_history(
     except Exception as exc:
         logger.debug("Database unavailable for analysis_history: %s", exc)
 
-    local = _DEV_ANALYSES.get(str(repositoryId))
+    local = dev_store.get_analyses().get(str(repositoryId))
     if local:
         return [analysis_response(local)]
     return []

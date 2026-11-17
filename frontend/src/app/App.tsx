@@ -34,8 +34,10 @@ export function App() {
       .getImportedRepositories()
       .then((repos) => {
         setImportedRepos(repos);
-        if (repos.length > 0 && !activeRepo) {
-          setActiveRepo(repos[0]);
+        if (repos.length > 0) {
+          if (!activeRepo || !repos.some((r) => r.id === activeRepo.id)) {
+            setActiveRepo(repos[0]);
+          }
         }
       })
       .catch((err) => console.error("Error loading repositories:", err));
@@ -122,48 +124,62 @@ export function App() {
           onLogout={logout}
         >
           {activeTab === "dashboard" && (
-            <Dashboard
-              activeRepo={activeRepo}
-              latestAnalysis={latestAnalysis}
-              findingsList={findingsList}
-              isLoadingAnalysis={isLoadingAnalysis}
-              onTriggerAnalysis={handleTriggerAnalysis}
-              onNavigateToReview={handleNavigateToReview}
-              onOpenImportModal={() => {
-                setActiveTab("repositories");
-                setShowImportModal(true);
-              }}
-            />
+            <div key="dashboard" className="page-transition">
+              <Dashboard
+                activeRepo={activeRepo}
+                latestAnalysis={latestAnalysis}
+                findingsList={findingsList}
+                isLoadingAnalysis={isLoadingAnalysis}
+                onTriggerAnalysis={handleTriggerAnalysis}
+                onNavigateToReview={handleNavigateToReview}
+                onOpenImportModal={() => {
+                  setActiveTab("repositories");
+                  setShowImportModal(true);
+                }}
+              />
+            </div>
           )}
 
           {activeTab === "repositories" && (
-            <RepositoryPage
-              importedRepos={importedRepos}
-              activeRepo={activeRepo}
-              onSelectRepo={(repo) => setActiveRepo(repo)}
-              onRepoImported={(newRepo) => {
-                setImportedRepos((prev) => [newRepo, ...prev.filter((r) => r.id !== newRepo.id && r.fullName !== newRepo.fullName)]);
-                setActiveRepo(newRepo);
-              }}
-              onNavigateToDashboard={() => setActiveTab("dashboard")}
-              showImportModal={showImportModal}
-              setShowImportModal={setShowImportModal}
-            />
+            <div key="repositories" className="page-transition">
+              <RepositoryPage
+                importedRepos={importedRepos}
+                activeRepo={activeRepo}
+                onSelectRepo={(repo) => setActiveRepo(repo)}
+                onRepoImported={(newRepo) => {
+                  setImportedRepos((prev) => [newRepo, ...prev.filter((r) => r.id !== newRepo.id && r.fullName !== newRepo.fullName)]);
+                  setActiveRepo(newRepo);
+                }}
+                onNavigateToDashboard={() => setActiveTab("dashboard")}
+                showImportModal={showImportModal}
+                setShowImportModal={setShowImportModal}
+              />
+            </div>
           )}
 
-          {activeTab === "review" && (
+          <div className={activeTab === "review" ? "block page-transition" : "hidden"}>
             <AnalysisPage
               activeRepo={activeRepo}
               latestAnalysis={latestAnalysis}
               findingsList={findingsList}
               initialFindingFile={targetFindingFile}
               initialFindingId={targetFindingId}
+              isActiveTab={activeTab === "review"}
+              user={user}
             />
+          </div>
+
+          {activeTab === "reports" && (
+            <div key="reports" className="page-transition">
+              <ReportsPage activeRepo={activeRepo} />
+            </div>
           )}
 
-          {activeTab === "reports" && <ReportsPage activeRepo={activeRepo} />}
-
-          {activeTab === "settings" && <SettingsPage user={user} />}
+          {activeTab === "settings" && (
+            <div key="settings" className="page-transition">
+              <SettingsPage user={user} />
+            </div>
+          )}
         </DashboardLayout>
       )}
     </ProtectedRoute>

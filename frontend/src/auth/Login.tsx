@@ -47,12 +47,12 @@ export function Login({ onSwitchMode }: LoginProps) {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-bold text-slate-900 tracking-tight">Sign in to your workspace</h2>
-        <p className="text-xs text-slate-500 mt-1">Enter your credentials to access your quality metrics</p>
+        <h2 className="text-xl font-bold text-slate-100 tracking-tight">Sign in to your workspace</h2>
+        <p className="text-xs text-slate-400 mt-1">Enter your credentials to access your quality metrics</p>
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+        <div className="flex items-start gap-2 rounded-md border border-rose-500/40 bg-rose-950/40 p-3 text-xs text-rose-300 animate-fade-in">
           <AlertCircle size={15} className="mt-0.5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -66,7 +66,7 @@ export function Login({ onSwitchMode }: LoginProps) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           error={fieldErrors.email}
-          icon={<Mail size={15} />}
+          icon={<Mail size={15} className="text-emerald-400" />}
           required
         />
 
@@ -77,19 +77,19 @@ export function Login({ onSwitchMode }: LoginProps) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           error={fieldErrors.password}
-          icon={<Lock size={15} />}
+          icon={<Lock size={15} className="text-emerald-400" />}
           required
         />
 
         <div className="flex items-center justify-between text-xs">
-          <label className="flex items-center gap-1.5 text-slate-600 cursor-pointer">
-            <input type="checkbox" defaultChecked className="rounded border-slate-300 text-slate-900 focus:ring-0" />
+          <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer">
+            <input type="checkbox" defaultChecked className="rounded border-[#1c293e] bg-[#070b13] text-emerald-500 focus:ring-0" />
             <span>Remember me</span>
           </label>
           <button
             type="button"
             onClick={() => onSwitchMode("forgot")}
-            className="font-semibold text-teal-700 hover:text-teal-900 transition"
+            className="font-semibold text-emerald-400 hover:text-emerald-300 transition"
           >
             Forgot password?
           </button>
@@ -102,12 +102,12 @@ export function Login({ onSwitchMode }: LoginProps) {
 
       <OAuthButtons mode="login" onError={(msg) => setError(msg)} />
 
-      <p className="text-center text-xs text-slate-500 pt-2">
+      <p className="text-center text-xs text-slate-400 pt-2">
         Don&apos;t have an account?{" "}
         <button
           type="button"
           onClick={() => onSwitchMode("register")}
-          className="font-semibold text-teal-700 hover:text-teal-900 transition"
+          className="font-semibold text-emerald-400 hover:text-emerald-300 transition cursor-pointer"
         >
           Create one now
         </button>
