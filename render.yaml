@@ -1,5 +1,17 @@
 services:
-  # 1. FastAPI Main Backend API
+  # 1. React + Vite Frontend UI (Static Site - 100% Free on Render)
+  - type: static
+    name: codesense-frontend
+    region: singapore
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # 2. FastAPI Main Backend API
   - type: web
     name: codesense-backend
     env: python
@@ -25,7 +37,7 @@ services:
           name: codesense-ai-service
           property: hostport
       - key: CORS_ORIGINS
-        value: https://codesense-ai.pages.dev,http://localhost:5173
+        value: https://codesense-frontend.onrender.com,https://codesense-ai.pages.dev,http://localhost:5173
       - key: JWT_SECRET
         generateValue: true
       - key: LLM_PROVIDER
@@ -37,7 +49,7 @@ services:
       - key: CLOUDFLARE_MODEL
         value: "@cf/qwen/qwen2.5-coder-32b-instruct"
 
-  # 2. FastAPI AI Service & RAG Vector Engine
+  # 3. FastAPI AI Service & RAG Vector Engine
   - type: web
     name: codesense-ai-service
     env: python
