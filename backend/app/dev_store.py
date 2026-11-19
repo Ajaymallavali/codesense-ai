@@ -6,7 +6,24 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-STORE_FILE = Path(__file__).resolve().parent.parent / "dev_store.json"
+
+def _get_store_path() -> Path:
+    env_dir = os.environ.get("DATA_DIR")
+    if env_dir:
+        return Path(env_dir) / "dev_store.json"
+    default_path = Path(__file__).resolve().parent.parent / "dev_store.json"
+    try:
+        default_path.parent.mkdir(parents=True, exist_ok=True)
+        test_file = default_path.parent / ".test_write"
+        test_file.touch()
+        test_file.unlink()
+        return default_path
+    except Exception:
+        temp_dir = Path(os.environ.get("TEMP", os.environ.get("TMPDIR", "/tmp")))
+        return temp_dir / "codesense_dev_store.json"
+
+
+STORE_FILE = _get_store_path()
 
 
 class DevStore:
