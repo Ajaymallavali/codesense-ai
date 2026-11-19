@@ -5,7 +5,7 @@ export const API_BASE_URL = (
   configuredBaseUrl && configuredBaseUrl.trim() !== ""
     ? configuredBaseUrl.trim()
     : (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
-        ? "/api"
+        ? "https://codesense-ai-uvzn.vercel.app/api"
         : "http://localhost:8050/api")
 ).replace(/\/+$/, "");
 export const AUTH_STORAGE_KEY = "codesense.auth";
