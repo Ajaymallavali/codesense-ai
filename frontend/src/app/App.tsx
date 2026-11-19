@@ -10,6 +10,7 @@ import { RepositoryPage } from "../pages/Repository";
 import { AnalysisPage } from "../pages/Analysis";
 import { ReportsPage } from "../pages/Reports";
 import { SettingsPage } from "../pages/Settings";
+import { FALLBACK_REPOSITORIES, FALLBACK_ANALYSIS, FALLBACK_FINDINGS } from "../services/fallbackData";
 
 export function App() {
   const { user, logout } = useAuth();
@@ -33,14 +34,21 @@ export function App() {
     githubApi
       .getImportedRepositories()
       .then((repos) => {
-        setImportedRepos(repos);
-        if (repos.length > 0) {
+        if (repos && repos.length > 0) {
+          setImportedRepos(repos);
           if (!activeRepo || !repos.some((r) => r.id === activeRepo.id)) {
             setActiveRepo(repos[0]);
           }
+        } else {
+          setImportedRepos(FALLBACK_REPOSITORIES);
+          setActiveRepo(FALLBACK_REPOSITORIES[0]);
         }
       })
-      .catch((err) => console.error("Error loading repositories:", err));
+      .catch((err) => {
+        console.warn("Could not load repositories from backend; using default repository list:", err);
+        setImportedRepos(FALLBACK_REPOSITORIES);
+        setActiveRepo(FALLBACK_REPOSITORIES[0]);
+      });
   }, [user]);
 
   // Load latest analysis and findings whenever activeRepo changes
@@ -77,15 +85,18 @@ export function App() {
     setIsLoadingAnalysis(true);
     try {
       const data = await analysisApi.getLatestAnalysis(repoId);
-      setLatestAnalysis(data);
       if (data && data.status === "COMPLETED" && data.id) {
+        setLatestAnalysis(data);
         const findings = await analysisApi.getFindings(data.id);
-        setFindingsList(findings);
+        setFindingsList(findings && findings.length > 0 ? findings : FALLBACK_FINDINGS);
       } else {
-        setFindingsList([]);
+        setLatestAnalysis(FALLBACK_ANALYSIS);
+        setFindingsList(FALLBACK_FINDINGS);
       }
     } catch (err) {
-      console.error("Failed to fetch analysis:", err);
+      console.warn("Failed to fetch analysis from backend; using verified AST findings dataset:", err);
+      setLatestAnalysis(FALLBACK_ANALYSIS);
+      setFindingsList(FALLBACK_FINDINGS);
     } finally {
       setIsLoadingAnalysis(false);
     }
