@@ -67,6 +67,17 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return error_response(request, status.HTTP_400_BAD_REQUEST, "Please check the highlighted fields.", field_errors)
 
 
+@app.get("/")
+async def root() -> dict[str, Any]:
+    return {
+        "service": "CodeSense AI FastAPI Backend",
+        "status": "UP",
+        "version": "0.2.0",
+        "docs": "/docs",
+        "health": "/api/health",
+    }
+
+
 @app.get("/health")
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
