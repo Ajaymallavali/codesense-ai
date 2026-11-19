@@ -19,6 +19,9 @@ COPY backend/app ./app
 COPY backend/migrations ./migrations
 COPY backend/alembic.ini ./alembic.ini
 
+# Ensure full read/write access for any runtime user (UID 1000 on Hugging Face Spaces)
+RUN mkdir -p /app && chmod -R 777 /app
+
 EXPOSE 7860
 
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-7860}"]
