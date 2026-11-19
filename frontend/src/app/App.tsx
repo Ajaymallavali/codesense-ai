@@ -10,6 +10,7 @@ import { RepositoryPage } from "../pages/Repository";
 import { AnalysisPage } from "../pages/Analysis";
 import { ReportsPage } from "../pages/Reports";
 import { SettingsPage } from "../pages/Settings";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { FALLBACK_REPOSITORIES, FALLBACK_ANALYSIS, FALLBACK_FINDINGS } from "../services/fallbackData";
 
 export function App() {
@@ -34,9 +35,9 @@ export function App() {
     githubApi
       .getImportedRepositories()
       .then((repos) => {
-        if (repos && repos.length > 0) {
+        if (Array.isArray(repos) && repos.length > 0) {
           setImportedRepos(repos);
-          if (!activeRepo || !repos.some((r) => r.id === activeRepo.id)) {
+          if (!activeRepo || !repos.some((r) => r && r.id === activeRepo.id)) {
             setActiveRepo(repos[0]);
           }
         } else {
@@ -53,7 +54,7 @@ export function App() {
 
   // Load latest analysis and findings whenever activeRepo changes
   useEffect(() => {
-    if (!activeRepo) {
+    if (!activeRepo || !activeRepo.id) {
       setLatestAnalysis(null);
       setFindingsList([]);
       return;
@@ -67,6 +68,7 @@ export function App() {
     let timer: ReturnType<typeof setInterval> | null = null;
     if (
       activeRepo &&
+      activeRepo.id &&
       latestAnalysis &&
       (latestAnalysis.status === "RUNNING" ||
         latestAnalysis.status === "PENDING" ||
@@ -85,10 +87,10 @@ export function App() {
     setIsLoadingAnalysis(true);
     try {
       const data = await analysisApi.getLatestAnalysis(repoId);
-      if (data && data.status === "COMPLETED" && data.id) {
+      if (data && typeof data === "object" && data.status === "COMPLETED" && data.id) {
         setLatestAnalysis(data);
         const findings = await analysisApi.getFindings(data.id);
-        setFindingsList(findings && findings.length > 0 ? findings : FALLBACK_FINDINGS);
+        setFindingsList(Array.isArray(findings) && findings.length > 0 ? findings : FALLBACK_FINDINGS);
       } else {
         setLatestAnalysis(FALLBACK_ANALYSIS);
         setFindingsList(FALLBACK_FINDINGS);
@@ -122,77 +124,81 @@ export function App() {
   }
 
   return (
-    <ProtectedRoute>
-      {user && (
-        <DashboardLayout
-          user={user}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          onOpenImportModal={() => {
-            setActiveTab("repositories");
-            setShowImportModal(true);
-          }}
-          onLogout={logout}
-        >
-          {activeTab === "dashboard" && (
-            <div key="dashboard" className="page-transition">
-              <Dashboard
-                activeRepo={activeRepo}
-                latestAnalysis={latestAnalysis}
-                findingsList={findingsList}
-                isLoadingAnalysis={isLoadingAnalysis}
-                onTriggerAnalysis={handleTriggerAnalysis}
-                onNavigateToReview={handleNavigateToReview}
-                onOpenImportModal={() => {
-                  setActiveTab("repositories");
-                  setShowImportModal(true);
-                }}
-              />
-            </div>
-          )}
+    <ErrorBoundary fallbackTitle="CodeSense Application Error">
+      <ProtectedRoute>
+        {user && (
+          <DashboardLayout
+            user={user}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            onOpenImportModal={() => {
+              setActiveTab("repositories");
+              setShowImportModal(true);
+            }}
+            onLogout={logout}
+          >
+            <ErrorBoundary fallbackTitle="View Rendering Glitch">
+              {activeTab === "dashboard" && (
+                <div key="dashboard" className="page-transition">
+                  <Dashboard
+                    activeRepo={activeRepo}
+                    latestAnalysis={latestAnalysis}
+                    findingsList={findingsList}
+                    isLoadingAnalysis={isLoadingAnalysis}
+                    onTriggerAnalysis={handleTriggerAnalysis}
+                    onNavigateToReview={handleNavigateToReview}
+                    onOpenImportModal={() => {
+                      setActiveTab("repositories");
+                      setShowImportModal(true);
+                    }}
+                  />
+                </div>
+              )}
 
-          {activeTab === "repositories" && (
-            <div key="repositories" className="page-transition">
-              <RepositoryPage
-                importedRepos={importedRepos}
-                activeRepo={activeRepo}
-                onSelectRepo={(repo) => setActiveRepo(repo)}
-                onRepoImported={(newRepo) => {
-                  setImportedRepos((prev) => [newRepo, ...prev.filter((r) => r.id !== newRepo.id && r.fullName !== newRepo.fullName)]);
-                  setActiveRepo(newRepo);
-                }}
-                onNavigateToDashboard={() => setActiveTab("dashboard")}
-                showImportModal={showImportModal}
-                setShowImportModal={setShowImportModal}
-              />
-            </div>
-          )}
+              {activeTab === "repositories" && (
+                <div key="repositories" className="page-transition">
+                  <RepositoryPage
+                    importedRepos={importedRepos}
+                    activeRepo={activeRepo}
+                    onSelectRepo={(repo) => setActiveRepo(repo)}
+                    onRepoImported={(newRepo) => {
+                      setImportedRepos((prev) => [newRepo, ...prev.filter((r) => r.id !== newRepo.id && r.fullName !== newRepo.fullName)]);
+                      setActiveRepo(newRepo);
+                    }}
+                    onNavigateToDashboard={() => setActiveTab("dashboard")}
+                    showImportModal={showImportModal}
+                    setShowImportModal={setShowImportModal}
+                  />
+                </div>
+              )}
 
-          <div className={activeTab === "review" ? "block page-transition" : "hidden"}>
-            <AnalysisPage
-              activeRepo={activeRepo}
-              latestAnalysis={latestAnalysis}
-              findingsList={findingsList}
-              initialFindingFile={targetFindingFile}
-              initialFindingId={targetFindingId}
-              isActiveTab={activeTab === "review"}
-              user={user}
-            />
-          </div>
+              <div className={activeTab === "review" ? "block page-transition" : "hidden"}>
+                <AnalysisPage
+                  activeRepo={activeRepo}
+                  latestAnalysis={latestAnalysis}
+                  findingsList={findingsList}
+                  initialFindingFile={targetFindingFile}
+                  initialFindingId={targetFindingId}
+                  isActiveTab={activeTab === "review"}
+                  user={user}
+                />
+              </div>
 
-          {activeTab === "reports" && (
-            <div key="reports" className="page-transition">
-              <ReportsPage activeRepo={activeRepo} />
-            </div>
-          )}
+              {activeTab === "reports" && (
+                <div key="reports" className="page-transition">
+                  <ReportsPage activeRepo={activeRepo} />
+                </div>
+              )}
 
-          {activeTab === "settings" && (
-            <div key="settings" className="page-transition">
-              <SettingsPage user={user} />
-            </div>
-          )}
-        </DashboardLayout>
-      )}
-    </ProtectedRoute>
+              {activeTab === "settings" && (
+                <div key="settings" className="page-transition">
+                  <SettingsPage user={user} />
+                </div>
+              )}
+            </ErrorBoundary>
+          </DashboardLayout>
+        )}
+      </ProtectedRoute>
+    </ErrorBoundary>
   );
 }

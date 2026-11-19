@@ -96,5 +96,24 @@ export async function request<T>(
   if (contentType.includes("application/json")) {
     return res.json() as Promise<T>;
   }
-  return res.text() as unknown as Promise<T>;
+
+  const text = await res.text();
+
+  // If the server returned HTML (e.g. SPA index.html fallback for missing API endpoints on static hosting)
+  if (
+    contentType.includes("text/html") ||
+    text.trim().toLowerCase().startsWith("<!doctype") ||
+    text.trim().toLowerCase().startsWith("<html")
+  ) {
+    throw new ApiError(
+      `API endpoint returned HTML document instead of JSON. Backend service is not running or route not found (${url}).`,
+      404
+    );
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return text as unknown as T;
+  }
 }

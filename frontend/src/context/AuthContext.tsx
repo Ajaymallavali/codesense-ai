@@ -57,7 +57,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authApi
           .getMe()
           .then((me) => {
-            updateUser(me);
+            if (me && typeof me === "object" && me.displayName) {
+              updateUser(me);
+            }
           })
           .catch((err) => {
             console.warn("Could not refresh GitHub user profile:", err);
@@ -75,8 +77,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (raw) {
       try {
         const parsed: AuthResponse = JSON.parse(raw);
-        setUser(parsed.user);
-        setToken(parsed.token);
+        if (parsed && parsed.user && typeof parsed.user === "object" && parsed.user.displayName && parsed.token) {
+          setUser(parsed.user);
+          setToken(parsed.token);
+        } else {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+        }
       } catch {
         localStorage.removeItem(AUTH_STORAGE_KEY);
       }
@@ -195,6 +201,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function updateUser(updatedUser: User) {
+    if (!updatedUser || typeof updatedUser !== "object" || !updatedUser.displayName) {
+      console.warn("Invalid user profile update ignored:", updatedUser);
+      return;
+    }
     setUser(updatedUser);
     if (token) {
       localStorage.setItem(

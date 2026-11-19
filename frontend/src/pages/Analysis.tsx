@@ -108,6 +108,7 @@ export function AnalysisPage({
   user,
 }: AnalysisPageProps) {
   // PR Review State
+  const safeFindings = Array.isArray(findingsList) ? findingsList : [];
   const [prReviewData, setPrReviewData] = useState<PrReviewData | null>(null);
   const [isLoadingPrReview, setIsLoadingPrReview] = useState(false);
   const [prReviewError, setPrReviewError] = useState("");
@@ -289,14 +290,14 @@ export function AnalysisPage({
 
   // Helper to build real ReportSummary for active repository
   const buildCurrentSummary = (): ReportSummary => {
-    const secCount = findingsList.filter((f) => (f.category || "").toLowerCase().includes("sec")).length;
-    const complexCount = findingsList.filter((f) => (f.category || "").toLowerCase().includes("complex")).length;
-    const smellCount = findingsList.filter((f) => (f.category || "").toLowerCase().includes("smell") || (f.category || "").toLowerCase().includes("maintain")).length;
-    const testCount = findingsList.filter((f) => (f.category || "").toLowerCase().includes("test") || (f.category || "").toLowerCase().includes("reliab")).length;
-    const docCount = findingsList.filter((f) => (f.category || "").toLowerCase().includes("doc")).length;
+    const secCount = safeFindings.filter((f) => (f.category || "").toLowerCase().includes("sec")).length;
+    const complexCount = safeFindings.filter((f) => (f.category || "").toLowerCase().includes("complex")).length;
+    const smellCount = safeFindings.filter((f) => (f.category || "").toLowerCase().includes("smell") || (f.category || "").toLowerCase().includes("maintain")).length;
+    const testCount = safeFindings.filter((f) => (f.category || "").toLowerCase().includes("test") || (f.category || "").toLowerCase().includes("reliab")).length;
+    const docCount = safeFindings.filter((f) => (f.category || "").toLowerCase().includes("doc")).length;
 
-    const dynamicScore = latestAnalysis?.maintainabilityScore ?? (findingsList.length > 100 ? 30 : findingsList.length > 5 ? 72 : 92);
-    const dynamicDebt = latestAnalysis?.technicalDebtHours ?? (findingsList.length > 100 ? 5796 : findingsList.length > 5 ? 25 : 4);
+    const dynamicScore = latestAnalysis?.maintainabilityScore ?? (safeFindings.length > 100 ? 30 : safeFindings.length > 5 ? 72 : 92);
+    const dynamicDebt = latestAnalysis?.technicalDebtHours ?? (safeFindings.length > 100 ? 5796 : safeFindings.length > 5 ? 25 : 4);
 
     return {
       repository: activeRepo?.fullName || activeRepo?.name || "current_repository",
@@ -306,7 +307,7 @@ export function AnalysisPage({
       completedAt: latestAnalysis?.completedAt || new Date().toISOString(),
       maintainabilityScore: dynamicScore,
       technicalDebtHours: dynamicDebt,
-      findingsCount: findingsList.length,
+      findingsCount: safeFindings.length,
       findingsByCategory: {
         Security: secCount,
         Complexity: complexCount,
@@ -314,7 +315,7 @@ export function AnalysisPage({
         Testing: testCount,
         Documentation: docCount,
       },
-      findings: findingsList,
+      findings: safeFindings,
     };
   };
 
@@ -346,11 +347,11 @@ export function AnalysisPage({
       /\b(generate|download|give|create|export|get|show|make|pdf|health|file)\b/i.test(query);
 
     if (isReportQuery) {
-      const secFindings = findingsList.filter((f) => (f.category || "").toLowerCase().includes("sec"));
+      const secFindings = safeFindings.filter((f) => (f.category || "").toLowerCase().includes("sec"));
       const priorityCount = secFindings.filter((f) => (f.severity || "").toLowerCase() === "high" || (f.severity || "").toLowerCase() === "critical").length;
-      const score = latestAnalysis?.maintainabilityScore ?? (findingsList.length > 100 ? 30 : findingsList.length > 5 ? 72 : 92);
-      const debt = latestAnalysis?.technicalDebtHours ?? (findingsList.length > 100 ? 5796 : findingsList.length > 5 ? 25 : 4);
-      const topLocations = findingsList.slice(0, 3).map((f) => {
+      const score = latestAnalysis?.maintainabilityScore ?? (safeFindings.length > 100 ? 30 : safeFindings.length > 5 ? 72 : 92);
+      const debt = latestAnalysis?.technicalDebtHours ?? (safeFindings.length > 100 ? 5796 : safeFindings.length > 5 ? 25 : 4);
+      const topLocations = safeFindings.slice(0, 3).map((f) => {
         const file = f.filePath || (f as any).file_path || (f as any).file || "code";
         const line = f.lineNumber ?? (f as any).line_number ?? 1;
         return `\`${file}:${line}\``;
@@ -361,7 +362,7 @@ export function AnalysisPage({
 ### Repository Health & Audit Overview
 - **Repository Health Score:** **${score}/100**
 - **Analysis Coverage:** 98%
-- **Total AST Findings:** ${findingsList.length} issues detected
+- **Total AST Findings:** ${safeFindings.length} issues detected
 - **Technical Debt:** ~${debt} hours
 - **Priority Fixes:** ${priorityCount} critical/high security risks
 - **Key Failure Lines:** ${topLocations || "No critical issues"}

@@ -342,7 +342,7 @@ export function RepositoryPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#172235]">
-              {importedRepos.length === 0 ? (
+              {(!Array.isArray(importedRepos) || importedRepos.length === 0) ? (
                 <tr>
                   <td colSpan={5} className="py-8 text-center text-slate-500">
                     No repositories imported yet. Click &apos;Add GitHub Repo&apos; above to get started.

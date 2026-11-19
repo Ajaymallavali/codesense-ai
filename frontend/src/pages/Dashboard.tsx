@@ -329,9 +329,12 @@ export function Dashboard({
     analysisApi
       .getAnalysisHistory(activeRepo.id)
       .then((data) => {
-        if (isMounted) setHistory(data);
+        if (isMounted) setHistory(Array.isArray(data) ? data : []);
       })
-      .catch((err) => console.error("Could not load analysis history:", err))
+      .catch((err) => {
+        console.warn("Could not load analysis history:", err);
+        if (isMounted) setHistory([]);
+      })
       .finally(() => {
         if (isMounted) setIsLoadingHistory(false);
       });
@@ -342,16 +345,17 @@ export function Dashboard({
   }, [activeRepo, latestAnalysis?.id]);
 
   // Dynamic metrics derived from real findingsList
-  const highSecurityCount = findingsList.filter(
-    (f) => f.category.toLowerCase() === "security" && f.severity.toLowerCase() === "high"
+  const safeFindings = Array.isArray(findingsList) ? findingsList : [];
+  const highSecurityCount = safeFindings.filter(
+    (f) => (f.category || "").toLowerCase() === "security" && (f.severity || "").toLowerCase() === "high"
   ).length;
-  const totalBugs = findingsList.filter(
-    (f) => f.category.toLowerCase() === "testing" || f.severity.toLowerCase() === "high"
+  const totalBugs = safeFindings.filter(
+    (f) => (f.category || "").toLowerCase() === "testing" || (f.severity || "").toLowerCase() === "high"
   ).length;
-  const totalSmells = findingsList.filter((f) => f.category.toLowerCase() === "code smell").length;
-  const totalSecurity = findingsList.filter((f) => f.category.toLowerCase() === "security").length;
-  const totalDocs = findingsList.filter((f) => f.category.toLowerCase() === "documentation").length;
-  const totalComplexity = findingsList.filter((f) => f.category.toLowerCase() === "complexity").length;
+  const totalSmells = safeFindings.filter((f) => (f.category || "").toLowerCase() === "code smell").length;
+  const totalSecurity = safeFindings.filter((f) => (f.category || "").toLowerCase() === "security").length;
+  const totalDocs = safeFindings.filter((f) => (f.category || "").toLowerCase() === "documentation").length;
+  const totalComplexity = safeFindings.filter((f) => (f.category || "").toLowerCase() === "complexity").length;
 
   // Findings Table Filtering, Sorting & Code Line Inspection State
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("all");
@@ -399,9 +403,9 @@ export function Dashboard({
 
   // Priority sorting: High/Critical (3) -> Medium (2) -> Low (1)
   const sortedAndFilteredFindings = useMemo(() => {
-    let list = [...findingsList];
+    let list = [...safeFindings];
     if (selectedCategoryFilter !== "all") {
-      list = list.filter((f) => f.category.toLowerCase() === selectedCategoryFilter.toLowerCase());
+      list = list.filter((f) => (f.category || "").toLowerCase() === selectedCategoryFilter.toLowerCase());
     }
     const severityWeight: Record<string, number> = {
       critical: 4,
@@ -410,12 +414,14 @@ export function Dashboard({
       low: 1,
     };
     return list.sort((a, b) => {
-      const wA = severityWeight[a.severity.toLowerCase()] || 0;
-      const wB = severityWeight[b.severity.toLowerCase()] || 0;
+      const sevA = (a.severity || "medium").toLowerCase();
+      const sevB = (b.severity || "medium").toLowerCase();
+      const wA = severityWeight[sevA] || 0;
+      const wB = severityWeight[sevB] || 0;
       if (wB !== wA) return wB - wA;
       return (a.lineNumber ?? 0) - (b.lineNumber ?? 0);
     });
-  }, [findingsList, selectedCategoryFilter]);
+  }, [safeFindings, selectedCategoryFilter]);
 
   const scoreCards = [
     {
@@ -432,7 +438,7 @@ export function Dashboard({
     },
     {
       label: "Total Code Findings",
-      value: latestAnalysis && latestAnalysis.status === "COMPLETED" ? `${findingsList.length}` : "--",
+      value: latestAnalysis && latestAnalysis.status === "COMPLETED" ? `${safeFindings.length}` : "--",
       tone: "text-slate-100",
       icon: Bug,
     },
@@ -462,7 +468,7 @@ export function Dashboard({
 
   // Dynamic File Complexity Data from AST Findings
   const dynamicComplexityData = useMemo(() => {
-    if (findingsList.length === 0) {
+    if (safeFindings.length === 0) {
       return [
         { name: "Parser", complexity: 12 },
         { name: "Core", complexity: 18 },
@@ -470,11 +476,12 @@ export function Dashboard({
     }
 
     const fileMap: Record<string, number> = {};
-    findingsList.forEach((f) => {
+    safeFindings.forEach((f) => {
+      if (!f.filePath) return;
       const parts = f.filePath.split("/");
-      const simpleName = parts[parts.length - 1];
-      if (f.category.toLowerCase() === "complexity") {
-        const match = f.title.match(/\((\d+)\)/);
+      const simpleName = parts[parts.length - 1] || "file";
+      if ((f.category || "").toLowerCase() === "complexity") {
+        const match = (f.title || "").match(/\((\d+)\)/);
         if (match) {
           fileMap[simpleName] = parseInt(match[1], 10);
         }
@@ -482,9 +489,10 @@ export function Dashboard({
     });
 
     if (Object.keys(fileMap).length === 0) {
-      findingsList.forEach((f) => {
+      safeFindings.forEach((f) => {
+        if (!f.filePath) return;
         const parts = f.filePath.split("/");
-        const simpleName = parts[parts.length - 1];
+        const simpleName = parts[parts.length - 1] || "file";
         fileMap[simpleName] = (fileMap[simpleName] || 0) + 1;
       });
       return Object.entries(fileMap).slice(0, 6).map(([name, count]) => ({
@@ -497,7 +505,7 @@ export function Dashboard({
       name,
       complexity: val,
     }));
-  }, [findingsList]);
+  }, [safeFindings]);
 
   // Dynamic Repository Condition & Risk Diagnostics
   const repoCondition = useMemo(() => {
@@ -570,8 +578,9 @@ export function Dashboard({
 
   // Real Historical Analysis Trends Data with Moving Progression Checkpoints
   const historicalTrendData = useMemo(() => {
-    if (history.length > 1) {
-      return history.map((item, idx) => {
+    const safeHistory = Array.isArray(history) ? history : [];
+    if (safeHistory.length > 1) {
+      return safeHistory.map((item, idx) => {
         const date = new Date(item.startedAt);
         const dateStr = !isNaN(date.getTime())
           ? date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
@@ -587,11 +596,11 @@ export function Dashboard({
     // When history has 1 record or is empty but latestAnalysis exists,
     // generate the progressive audit checkpoints so the line chart can render
     // a fluid, moving progression wave instead of an isolated solitary dot!
-    const currentScore = latestAnalysis?.maintainabilityScore ?? (history[0]?.maintainabilityScore || 30);
-    const currentDebt = latestAnalysis?.technicalDebtHours ?? (history[0]?.technicalDebtHours || 5796);
+    const currentScore = latestAnalysis?.maintainabilityScore ?? (safeHistory[0]?.maintainabilityScore || 30);
+    const currentDebt = latestAnalysis?.technicalDebtHours ?? (safeHistory[0]?.technicalDebtHours || 5796);
 
     let latestLabel = "Latest Audit";
-    const rawDate = latestAnalysis?.completedAt || history[0]?.startedAt;
+    const rawDate = latestAnalysis?.completedAt || safeHistory[0]?.startedAt;
     if (rawDate) {
       const d = new Date(rawDate);
       if (!isNaN(d.getTime())) {
@@ -1114,14 +1123,14 @@ export function Dashboard({
                         <td className="py-2.5 px-3">
                           <span
                             className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase font-mono transition-transform duration-150 group-hover:scale-105 ${
-                              finding.severity.toLowerCase() === "high" || finding.severity.toLowerCase() === "critical"
+                              (finding.severity || "").toLowerCase() === "high" || (finding.severity || "").toLowerCase() === "critical"
                                 ? "bg-rose-950/80 border border-rose-800/70 text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.35)]"
-                                : finding.severity.toLowerCase() === "medium"
+                                : (finding.severity || "").toLowerCase() === "medium"
                                 ? "bg-amber-950/80 border border-amber-800/70 text-amber-300 shadow-[0_0_6px_rgba(245,158,11,0.25)]"
                                 : "bg-emerald-950/80 border border-emerald-800/70 text-emerald-300 shadow-[0_0_6px_rgba(16,185,129,0.2)]"
                             }`}
                           >
-                            {finding.severity}
+                            {finding.severity || "Low"}
                           </span>
                         </td>
                         <td className="py-2.5 px-3 font-medium text-slate-300">
