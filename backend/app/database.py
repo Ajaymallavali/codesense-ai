@@ -167,3 +167,15 @@ def initialize_database() -> None:
             connection.commit()
     except Exception as exc:
         logger.warning("Could not initialize PostgreSQL database tables: %s", exc)
+
+
+def check_database_health() -> str:
+    try:
+        if not settings.database_url or "localhost" in settings.database_url:
+            return "LOCAL_FALLBACK (dev_store)"
+        with psycopg.connect(settings.database_url, connect_timeout=3) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                return "CONNECTED"
+    except Exception as exc:
+        return f"OFFLINE ({exc.__class__.__name__})"

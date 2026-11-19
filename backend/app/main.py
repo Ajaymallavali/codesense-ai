@@ -26,7 +26,7 @@ from app.api.users import router as users_router
 from app.api.webhooks import router as webhooks_router
 from app.api.organizations import router as organizations_router
 from app.config import settings
-from app.database import initialize_database
+from app.database import initialize_database, check_database_health
 from app.jobs import check_redis_health
 
 logger = logging.getLogger(__name__)
@@ -83,9 +83,11 @@ async def root() -> dict[str, Any]:
 async def health() -> dict[str, Any]:
     ai_status = await ai_client.check_health()
     redis_status = check_redis_health()
+    db_status = check_database_health()
     return {
         "service": "codesense-fastapi-backend",
         "status": "UP",
+        "database": db_status,
         "aiService": ai_status,
         "redis": redis_status,
         "timestamp": datetime.now(timezone.utc).isoformat(),
