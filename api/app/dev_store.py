@@ -1,0 +1,221 @@
+import json
+import logging
+import os
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+def _get_store_path() -> Path:
+    env_dir = os.environ.get("DATA_DIR")
+    if env_dir:
+        return Path(env_dir) / "dev_store.json"
+    default_path = Path(__file__).resolve().parent.parent / "dev_store.json"
+    try:
+        default_path.parent.mkdir(parents=True, exist_ok=True)
+        test_file = default_path.parent / ".test_write"
+        test_file.touch()
+        test_file.unlink()
+        return default_path
+    except Exception:
+        temp_dir = Path(os.environ.get("TEMP", os.environ.get("TMPDIR", "/tmp")))
+        return temp_dir / "codesense_dev_store.json"
+
+
+STORE_FILE = _get_store_path()
+
+
+class DevStore:
+    """
+    Lightweight, file-backed local persistence layer.
+    Ensures users, imported repos, analyses, findings, and teams permanently
+    persist across backend restarts even when PostgreSQL is offline.
+    """
+
+    def __init__(self, file_path: Path = STORE_FILE):
+        self.file_path = file_path
+        self._data: dict[str, Any] = {
+            "users": [],
+            "repositories": [
+                {
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "owner_id": "00000000-0000-0000-0000-000000000000",
+                    "name": "TREND-TECH-2",
+                    "full_name": "Ajaymallavali/TREND-TECH-2",
+                    "default_branch": "main",
+                    "language": "JavaScript",
+                    "imported_at": "2026-10-15T12:00:00Z",
+                }
+            ],
+            "analyses": {},
+            "findings": {},
+            "organizations": [],
+            "organization_members": [],
+        }
+        self.load()
+
+    def load(self) -> None:
+        if self.file_path.exists():
+            try:
+                with open(self.file_path, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        self._data.update(loaded)
+            except Exception as exc:
+                logger.warning(f"Could not load dev store from {self.file_path}: {exc}")
+
+    def save(self) -> None:
+        try:
+            temp_path = self.file_path.with_suffix(".tmp")
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(self._data, f, indent=2, default=str)
+            if os.path.exists(temp_path):
+                os.replace(temp_path, self.file_path)
+        except Exception as exc:
+            logger.warning(f"Could not save dev store to {self.file_path}: {exc}")
+
+    # Users
+    def get_users(self) -> list[dict[str, Any]]:
+        return self._data.setdefault("users", [])
+
+    def save_user(self, user: dict[str, Any]) -> None:
+        users = self.get_users()
+        for idx, u in enumerate(users):
+            if u.get("id") == user.get("id") or u.get("email") == user.get("email"):
+                users[idx] = user
+                self.save()
+                return
+        users.append(user)
+        self.save()
+
+    def find_user_by_email(self, email: str) -> dict[str, Any] | None:
+        for u in self.get_users():
+            if str(u.get("email", "")).lower() == email.lower():
+                return u
+        return None
+
+    def find_user_by_id(self, user_id: str) -> dict[str, Any] | None:
+        for u in self.get_users():
+            if str(u.get("id", "")) == str(user_id):
+                return u
+        return None
+
+    # Repositories
+    def get_repositories(self) -> list[dict[str, Any]]:
+        return self._data.setdefault("repositories", [])
+
+    def save_repository(self, repo: dict[str, Any]) -> None:
+        repos = self.get_repositories()
+        for idx, r in enumerate(repos):
+            if r.get("id") == repo.get("id") or r.get("full_name") == repo.get("full_name"):
+                repos[idx] = repo
+                self.save()
+                return
+        repos.insert(0, repo)
+        self.save()
+
+    # Analyses & Findings
+    def get_analyses(self) -> dict[str, dict[str, Any]]:
+        return self._data.setdefault("analyses", {})
+
+    def save_analysis(self, repo_id: str, analysis: dict[str, Any]) -> None:
+        self.get_analyses()[str(repo_id)] = analysis
+        self.save()
+
+    def get_findings(self) -> dict[str, list[dict[str, Any]]]:
+        return self._data.setdefault("findings", {})
+
+    def save_findings(self, analysis_id: str, findings: list[dict[str, Any]]) -> None:
+        self.get_findings()[str(analysis_id)] = findings
+        self.save()
+
+    # Organizations
+    def get_organizations(self) -> list[dict[str, Any]]:
+        return self._data.setdefault("organizations", [])
+
+    def save_organization(self, org: dict[str, Any]) -> None:
+        orgs = self.get_organizations()
+        for idx, o in enumerate(orgs):
+            if o.get("id") == org.get("id") or o.get("slug") == org.get("slug"):
+                orgs[idx] = org
+                self.save()
+                return
+        orgs.append(org)
+        self.save()
+
+    def get_organization_members(self) -> list[dict[str, Any]]:
+        return self._data.setdefault("organization_members", [])
+
+    def add_organization_member(self, member: dict[str, Any]) -> None:
+        members = self.get_organization_members()
+        for idx, m in enumerate(members):
+            if m.get("organization_id") == member.get("organization_id") and m.get("user_id") == member.get("user_id"):
+                members[idx] = member
+                self.save()
+                return
+        members.append(member)
+        self.save()
+
+
+    def get_conversations(self) -> dict[str, list[dict[str, Any]]]:
+        return self._data.setdefault("conversations", {})
+
+    def get_conversation_messages(self, conversation_id: str) -> list[dict[str, Any]]:
+        return self.get_conversations().get(str(conversation_id), [])
+
+    def get_conversation_owner(self, conversation_id: str) -> str | None:
+        return self._data.setdefault("conversation_owners", {}).get(str(conversation_id))
+
+    def index_repo_conversation(self, repo_id: str, conversation_id: str, user_id: str | None = None) -> None:
+        c_id = str(conversation_id)
+        r_str = str(repo_id)
+        self._data.setdefault("repo_conversations", {})[r_str] = c_id
+        if user_id:
+            self._data.setdefault("user_repo_conversations", {})[f"{user_id}:{r_str}"] = c_id
+        self.save()
+
+    def save_conversation_message(
+        self,
+        conversation_id: str,
+        message: dict[str, Any],
+        user_id: str | None = None,
+        repo_id: str | None = None,
+    ) -> None:
+        convs = self.get_conversations()
+        c_id = str(conversation_id)
+        if c_id not in convs:
+            convs[c_id] = []
+        convs[c_id].append(message)
+        if user_id:
+            self._data.setdefault("conversation_owners", {})[c_id] = str(user_id)
+        if repo_id:
+            self.index_repo_conversation(repo_id, c_id, user_id=user_id)
+        else:
+            self.save()
+
+    def get_latest_conversation_for_repo(self, repo_id: str, user_id: str | None = None) -> str | None:
+        r_str = str(repo_id)
+        convs = self.get_conversations()
+        if user_id:
+            user_c_id = self._data.setdefault("user_repo_conversations", {}).get(f"{user_id}:{r_str}")
+            if user_c_id and user_c_id in convs:
+                return user_c_id
+        c_id = self._data.setdefault("repo_conversations", {}).get(r_str)
+        if c_id and c_id in convs:
+            return c_id
+        for repo in self._data.get("repositories", []):
+            if str(repo.get("id")) == r_str or repo.get("name") == r_str or repo.get("full_name") == r_str:
+                for alt_key in (str(repo.get("id")), repo.get("name"), repo.get("full_name")):
+                    if alt_key and user_id:
+                        alt_c_id = self._data.get("user_repo_conversations", {}).get(f"{user_id}:{alt_key}")
+                        if alt_c_id and alt_c_id in convs:
+                            return alt_c_id
+                    if alt_key:
+                        alt_c_id = self._data.get("repo_conversations", {}).get(str(alt_key))
+                        if alt_c_id and alt_c_id in convs:
+                            return alt_c_id
+        return None
+
+
+dev_store = DevStore()
