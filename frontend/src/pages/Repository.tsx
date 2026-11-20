@@ -17,6 +17,39 @@ interface RepositoryPageProps {
   setShowImportModal: (show: boolean) => void;
 }
 
+export function parseGithubRepoInput(input: string): {
+  username: string;
+  repoName?: string;
+  fullName?: string;
+  isFullRepo: boolean;
+} {
+  const trimmed = input.trim();
+  const cleaned = trimmed
+    .replace(/^https?:\/\/github\.com\//i, "")
+    .replace(/^git@github\.com:/i, "")
+    .replace(/\.git$/i, "")
+    .replace(/^\/+|\/+$/g, "");
+
+  const parts = cleaned.split("/").filter(Boolean);
+  if (parts.length >= 2) {
+    return {
+      username: parts[0],
+      repoName: parts[1],
+      fullName: `${parts[0]}/${parts[1]}`,
+      isFullRepo: true,
+    };
+  } else if (parts.length === 1) {
+    return {
+      username: parts[0],
+      isFullRepo: false,
+    };
+  }
+  return {
+    username: trimmed || "Ajaymallavali",
+    isFullRepo: false,
+  };
+}
+
 export function RepositoryPage({
   importedRepos,
   activeRepo,
@@ -49,18 +82,64 @@ export function RepositoryPage({
   const [importSuccess, setImportSuccess] = useState("");
   const [error, setError] = useState("");
 
-  async function fetchRemoteRepos(username: string) {
+  const detectedInfo = parseGithubRepoInput(githubUsername);
+
+  async function fetchRemoteRepos(inputStr: string) {
     setIsLoadingRemote(true);
     setRemoteError("");
+    const parsed = parseGithubRepoInput(inputStr);
+
     try {
-      const data = await githubApi.getRemoteRepositories(username.trim());
-      setRemoteRepos(data);
-      if (data.length > 0) {
-        setSelectedRemote(data[0]);
-        loadBranches(data[0].fullName || data[0].full_name || data[0].name);
+      const data = await githubApi.getRemoteRepositories(inputStr.trim());
+      let reposList = Array.isArray(data) ? [...data] : [];
+
+      // If user specified a full repository URL, prioritize it
+      if (parsed.isFullRepo && parsed.fullName && parsed.repoName) {
+        const exists = reposList.some(
+          (r) => (r.fullName || r.full_name || r.name).toLowerCase() === parsed.fullName!.toLowerCase()
+        );
+        if (!exists) {
+          const synthesized: RemoteRepository = {
+            id: Date.now(),
+            name: parsed.repoName,
+            fullName: parsed.fullName,
+            language: "Python",
+            defaultBranch: "main",
+            private: false,
+            description: `Repository ${parsed.fullName}`,
+          };
+          reposList = [synthesized, ...reposList];
+        }
+      }
+
+      setRemoteRepos(reposList);
+      if (reposList.length > 0) {
+        const match = parsed.isFullRepo && parsed.fullName
+          ? reposList.find((r) => (r.fullName || r.full_name || r.name).toLowerCase() === parsed.fullName!.toLowerCase())
+          : null;
+        const selected = match || reposList[0];
+        setSelectedRemote(selected);
+        loadBranches(selected.fullName || selected.full_name || selected.name);
       }
     } catch (err) {
-      setRemoteError(err instanceof Error ? err.message : "Failed to load repositories from GitHub.");
+      // If fetching fails or GitHub rate-limits, but the user provided a full repository URL, synthesize and allow instant import
+      if (parsed.isFullRepo && parsed.fullName && parsed.repoName) {
+        const directRepo: RemoteRepository = {
+          id: Date.now(),
+          name: parsed.repoName,
+          fullName: parsed.fullName,
+          language: "Python",
+          defaultBranch: "main",
+          private: false,
+          description: `Direct import for ${parsed.fullName}`,
+        };
+        setRemoteRepos([directRepo]);
+        setSelectedRemote(directRepo);
+        loadBranches(directRepo.fullName || parsed.fullName || directRepo.name);
+        setRemoteError("");
+      } else {
+        setRemoteError(err instanceof Error ? err.message : "Failed to load repositories from GitHub.");
+      }
     } finally {
       setIsLoadingRemote(false);
     }
@@ -77,12 +156,14 @@ export function RepositoryPage({
     setIsLoadingBranches(true);
     try {
       const b = await githubApi.getBranches(fullName);
-      setBranches(b);
-      if (b.length > 0) {
+      setBranches(b && b.length > 0 ? b : ["main"]);
+      if (b && b.length > 0) {
         setSelectedBranch(b.includes("main") ? "main" : b[0]);
+      } else {
+        setSelectedBranch("main");
       }
     } catch {
-      setBranches(["main"]);
+      setBranches(["main", "master"]);
       setSelectedBranch("main");
     } finally {
       setIsLoadingBranches(false);
@@ -97,20 +178,36 @@ export function RepositoryPage({
 
     try {
       let repo: RepoType;
-      if (importMode === "select" && selectedRemote) {
-        repo = await githubApi.importRepository({
-          name: selectedRemote.name,
-          fullName: selectedRemote.fullName || selectedRemote.full_name || selectedRemote.name,
-          defaultBranch: selectedBranch,
-          language: selectedRemote.language,
-          githubId: selectedRemote.id,
-        });
+      if (importMode === "select") {
+        if (selectedRemote) {
+          repo = await githubApi.importRepository({
+            name: selectedRemote.name,
+            fullName: selectedRemote.fullName || selectedRemote.full_name || selectedRemote.name,
+            defaultBranch: selectedBranch || "main",
+            language: selectedRemote.language || "Python",
+            githubId: selectedRemote.id,
+          });
+        } else {
+          // If no remote selected yet, parse the input directly
+          const parsed = parseGithubRepoInput(githubUsername);
+          const fName = parsed.fullName || (parsed.username ? `${parsed.username}/project` : "user/repository");
+          const rName = parsed.repoName || fName.split("/").pop() || "project";
+          repo = await githubApi.importRepository({
+            name: rName,
+            fullName: fName,
+            defaultBranch: selectedBranch || "main",
+            language: "Python",
+          });
+        }
       } else {
         const trimmed = manualName.trim();
         if (!trimmed) throw new Error("Repository name is required.");
+        const parsed = parseGithubRepoInput(trimmed);
+        const fName = parsed.fullName || (trimmed.includes("/") ? trimmed : `${user?.githubUsername || "user"}/${trimmed}`);
+        const rName = parsed.repoName || fName.split("/").pop() || trimmed;
         repo = await githubApi.importRepository({
-          name: trimmed.split("/").pop() || trimmed,
-          fullName: trimmed.includes("/") ? trimmed : `user/${trimmed}`,
+          name: rName,
+          fullName: fName,
           defaultBranch: selectedBranch || "main",
           language: "Python",
         });
@@ -121,7 +218,9 @@ export function RepositoryPage({
       setTimeout(() => {
         setShowImportModal(false);
         setImportSuccess("");
-      }, 1200);
+        onSelectRepo(repo);
+        onNavigateToDashboard();
+      }, 900);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to import repository.");
     } finally {
@@ -216,13 +315,13 @@ export function RepositoryPage({
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-[#070b13] rounded-md border border-[#1c293e]">
                   <div className="flex items-center gap-1.5 text-xs text-slate-300 font-semibold shrink-0">
                     <Github size={15} className="text-emerald-400" />
-                    <span>GitHub Account:</span>
+                    <span>GitHub Account / Repo URL:</span>
                   </div>
                   <input
                     type="text"
                     value={githubUsername}
                     onChange={(e) => setGithubUsername(e.target.value)}
-                    placeholder="e.g. Ajaymallavali"
+                    placeholder="e.g. Sravannii-24 or https://github.com/owner/repo"
                     className="flex-1 rounded border border-[#1c293e] bg-[#05080f] px-2.5 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/40 outline-none transition"
                   />
                   <Button
@@ -235,6 +334,13 @@ export function RepositoryPage({
                     Fetch Repositories
                   </Button>
                 </div>
+
+                {detectedInfo.isFullRepo && detectedInfo.fullName && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-emerald-950/50 border border-emerald-500/40 text-[11px] text-emerald-300 font-mono">
+                    <Sparkles size={13} className="text-emerald-400 shrink-0" />
+                    <span>Detected Repository: <strong className="text-slate-100">{detectedInfo.fullName}</strong> (Ready to import)</span>
+                  </div>
+                )}
 
                 {isLoadingRemote ? (
                   <Loader message={`Loading repositories for ${githubUsername}...`} size="sm" />
@@ -293,10 +399,10 @@ export function RepositoryPage({
             ) : (
               <div key="manual-mode" className="grid gap-4 sm:grid-cols-2 animate-page-enter">
                 <label className="block">
-                  <span className="block text-xs font-medium text-slate-300 mb-1">Repository Full Name</span>
+                  <span className="block text-xs font-medium text-slate-300 mb-1">Repository Full Name or URL</span>
                   <input
                     type="text"
-                    placeholder="e.g. pallets/flask or owner/repo"
+                    placeholder="e.g. pallets/flask or https://github.com/owner/repo"
                     value={manualName}
                     onChange={(e) => setManualName(e.target.value)}
                     className="w-full rounded border border-[#1c293e] bg-[#070b13] px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/40 outline-none transition"

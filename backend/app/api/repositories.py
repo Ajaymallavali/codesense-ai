@@ -110,15 +110,38 @@ def list_repositories(current_user: dict[str, Any] = Depends(get_current_user)) 
     return [repository_response(r) for r in user_repos]
 
 
+def _sanitize_github_input(raw: str | None) -> tuple[str, str | None]:
+    """Extract clean (username, optional_repo_name) from URL or username string."""
+    if not raw:
+        return ("Ajaymallavali", None)
+    cleaned = (
+        raw.strip()
+        .replace("https://github.com/", "")
+        .replace("http://github.com/", "")
+        .replace("git@github.com:", "")
+        .removesuffix(".git")
+        .strip("/")
+    )
+    parts = [p for p in cleaned.split("/") if p]
+    if len(parts) >= 2:
+        return (parts[0], parts[1])
+    elif len(parts) == 1:
+        return (parts[0], None)
+    return ("Ajaymallavali", None)
+
+
 @router.get("/github")
 async def list_github_repositories(
     username: str | None = None,
     current_user: dict[str, Any] = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
-    """Fetch user's repositories from real GitHub REST API."""
+    """Fetch user's repositories from real GitHub REST API with full URL resilience."""
     target_username = username or current_user.get("github_username") or "Ajaymallavali"
+    clean_user, target_repo = _sanitize_github_input(target_username)
     token = current_user.get("github_token")
-    return await github_service.list_user_repositories(access_token=token, username=target_username)
+    return await github_service.list_user_repositories(
+        access_token=token, username=clean_user, target_repo=target_repo
+    )
 
 
 @router.get("/github/details")
@@ -134,8 +157,16 @@ async def github_repository_details(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Repository name parameter (repo or fullName) is required.",
         )
+    clean_target = (
+        target.strip()
+        .replace("https://github.com/", "")
+        .replace("http://github.com/", "")
+        .replace("git@github.com:", "")
+        .removesuffix(".git")
+        .strip("/")
+    )
     token = current_user.get("github_token")
-    return await github_service.get_repository_details(repo_full_name=target, access_token=token)
+    return await github_service.get_repository_details(repo_full_name=clean_target, access_token=token)
 
 
 @router.get("/github/branches")
@@ -147,12 +178,21 @@ async def github_repository_branches(
     """Fetch real repository branch names from GitHub REST API."""
     target = repo or fullName
     if not target:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Repository name parameter (repo or fullName) is required.",
-        )
+        return ["main", "master", "develop"]
+    clean_target = (
+        target.strip()
+        .replace("https://github.com/", "")
+        .replace("http://github.com/", "")
+        .replace("git@github.com:", "")
+        .removesuffix(".git")
+        .strip("/")
+    )
     token = current_user.get("github_token")
-    return await github_service.get_repository_branches(repo_full_name=target, access_token=token)
+    try:
+        branches = await github_service.get_repository_branches(repo_full_name=clean_target, access_token=token)
+        return branches if branches else ["main"]
+    except Exception:
+        return ["main", "master"]
 
 
 @router.post("/import", response_model=RepositoryResponse, status_code=status.HTTP_201_CREATED)
@@ -160,8 +200,29 @@ def import_repository(
     payload: ImportRepositoryRequest,
     current_user: dict[str, Any] = Depends(get_current_user),
 ) -> RepositoryResponse:
-    full_name = payload.fullName or payload.name
-    name = payload.name.split("/")[-1]
+    raw_input = (payload.fullName or payload.name or "").strip()
+    clean_target = (
+        raw_input.replace("https://github.com/", "")
+        .replace("http://github.com/", "")
+        .replace("git@github.com:", "")
+        .removesuffix(".git")
+        .strip("/")
+    )
+    parts = [p for p in clean_target.split("/") if p]
+    if len(parts) >= 2:
+        owner = parts[0]
+        repo_name = parts[1]
+        full_name = f"{owner}/{repo_name}"
+    elif len(parts) == 1:
+        owner = current_user.get("github_username") or "user"
+        repo_name = parts[0]
+        full_name = f"{owner}/{repo_name}"
+    else:
+        owner = current_user.get("github_username") or "user"
+        repo_name = "repository"
+        full_name = f"{owner}/repository"
+
+    name = repo_name
     repo_id = uuid4()
     imported_row = {
         "id": repo_id,
@@ -169,7 +230,7 @@ def import_repository(
         "name": name,
         "full_name": full_name,
         "default_branch": payload.defaultBranch or "main",
-        "language": payload.language or "JavaScript",
+        "language": payload.language or "Python",
         "imported_at": datetime.now(timezone.utc),
     }
 

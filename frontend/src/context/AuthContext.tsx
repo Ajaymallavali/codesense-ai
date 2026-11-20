@@ -171,8 +171,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function loginWithGithub(payload?: { username?: string; token?: string; email?: string; displayName?: string }) {
+    const rawUsername = payload?.username?.trim() || "Ajaymallavali";
+    const cleanUsername = rawUsername
+      .replace(/^https?:\/\/github\.com\//i, "")
+      .replace(/^git@github\.com:/i, "")
+      .replace(/\.git$/i, "")
+      .split("/")[0]
+      .replace(/[^a-zA-Z0-9_-]/g, "");
+    const finalUsername = cleanUsername || "Ajaymallavali";
+    const finalDisplayName = payload?.displayName || (finalUsername.toLowerCase() === "ajaymallavali" ? "Ajay Mallavalli" : finalUsername);
+
     try {
-      const auth = await authApi.loginWithGithub(payload);
+      const auth = await authApi.loginWithGithub({
+        ...payload,
+        username: finalUsername,
+        displayName: finalDisplayName,
+      });
       handleAuthSuccess(auth);
     } catch (err: any) {
       if (err?.status === 405 || err?.status === 404 || err?.status === 0 || !err?.status) {
@@ -182,9 +196,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           tokenType: "Bearer",
           user: {
             ...DEFAULT_DEMO_USER,
-            githubUsername: payload?.username || "Ajaymallavali",
-            displayName: payload?.displayName || "Ajay Mallavalli",
-            email: payload?.email || `${(payload?.username || "ajaymallavali").toLowerCase()}@github.com`,
+            id: finalUsername.toLowerCase() === "ajaymallavali" ? DEFAULT_DEMO_USER.id : `github-user-${finalUsername.toLowerCase()}`,
+            githubUsername: finalUsername,
+            displayName: finalDisplayName,
+            email: payload?.email || `${finalUsername.toLowerCase()}@github.com`,
           },
         };
         handleAuthSuccess(fallbackAuth);

@@ -134,9 +134,17 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
   // Execute Direct GitHub Account Login
   async function handleDirectGithubLogin(username: string, token?: string) {
     setIsGithubLoading(true);
+    const cleaned = username
+      .trim()
+      .replace(/^https?:\/\/github\.com\//i, "")
+      .replace(/^git@github\.com:/i, "")
+      .replace(/\.git$/i, "")
+      .split("/")[0]
+      .replace(/[^a-zA-Z0-9_-]/g, "");
+
     try {
       await loginWithGithub({
-        username: username.trim() || "Ajaymallavali",
+        username: cleaned || "Ajaymallavali",
         token: token?.trim() || undefined,
       });
       setShowGithubModal(false);

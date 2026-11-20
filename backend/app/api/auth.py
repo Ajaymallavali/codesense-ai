@@ -255,7 +255,16 @@ def github_url(state: str | None = None) -> dict[str, Any]:
 @router.post("/github/direct", response_model=AuthResponse)
 async def github_direct_login(payload: GitHubDirectLoginRequest) -> AuthResponse:
     """One-click or custom GitHub account authentication endpoint."""
-    username = (payload.username or "Ajaymallavali").strip()
+    raw_user = (payload.username or "Ajaymallavali").strip()
+    raw_user = (
+        raw_user.replace("https://github.com/", "")
+        .replace("http://github.com/", "")
+        .replace("git@github.com:", "")
+        .removesuffix(".git")
+        .strip("/")
+    )
+    user_parts = [p for p in raw_user.split("/") if p]
+    username = user_parts[0] if user_parts else "Ajaymallavali"
     user_token = payload.token.strip() if payload.token else None
 
     # Fetch live GitHub profile if token or network available

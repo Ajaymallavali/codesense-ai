@@ -68,6 +68,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 @app.get("/")
+@app.get("/api")
+@app.get("/api/")
 async def root() -> dict[str, Any]:
     return {
         "service": "CodeSense AI FastAPI Backend",
@@ -94,15 +96,21 @@ async def health() -> dict[str, Any]:
     }
 
 
-# Mount Modular Feature Routers
-app.include_router(auth_router, prefix="/api/auth")
-app.include_router(users_router, prefix="/api/users")
-app.include_router(repositories_router, prefix="/api/repositories")
-app.include_router(analysis_router, prefix="/api/analysis")
-app.include_router(reports_router, prefix="/api/reports")
-app.include_router(ai_router, prefix="/api/ai")
-app.include_router(webhooks_router, prefix="/api/webhooks")
-app.include_router(organizations_router, prefix="/api/organizations")
+# Mount Modular Feature Routers with both /api/... and /... prefixes for zero-ambiguity Vercel serverless routing
+routers_to_mount = [
+    (auth_router, "auth"),
+    (users_router, "users"),
+    (repositories_router, "repositories"),
+    (analysis_router, "analysis"),
+    (reports_router, "reports"),
+    (ai_router, "ai"),
+    (webhooks_router, "webhooks"),
+    (organizations_router, "organizations"),
+]
+
+for router_obj, path_segment in routers_to_mount:
+    app.include_router(router_obj, prefix=f"/api/{path_segment}")
+    app.include_router(router_obj, prefix=f"/{path_segment}", include_in_schema=False)
 
 __all__ = [
     "app",

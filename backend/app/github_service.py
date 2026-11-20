@@ -119,10 +119,25 @@ class GitHubService:
                 "avatar_url": user_data.get("avatar_url"),
             }
 
-    def _get_fallback_repositories(self, username: str | None = None) -> list[dict[str, Any]]:
+    def _get_fallback_repositories(
+        self, username: str | None = None, target_repo: str | None = None
+    ) -> list[dict[str, Any]]:
         uname = (username or "Ajaymallavali").strip()
+        base_repos = []
+        if target_repo:
+            target_clean = target_repo.strip().split("/")[-1]
+            base_repos.append({
+                "id": abs(hash(f"{uname}/{target_clean}")) % 1_000_000,
+                "name": target_clean,
+                "fullName": f"{uname}/{target_clean}",
+                "language": "Python",
+                "defaultBranch": "main",
+                "private": False,
+                "description": f"{target_clean} repository for {uname}",
+            })
+
         if uname.lower() == "ajaymallavali":
-            return [
+            base_repos.extend([
                 {
                     "id": 101,
                     "name": "TREND-TECH-2",
@@ -150,8 +165,10 @@ class GitHubService:
                     "private": False,
                     "description": "AI Code Quality & PR Review Intelligence",
                 },
-            ]
-        return [
+            ])
+            return base_repos
+
+        base_repos.extend([
             {
                 "id": 201,
                 "name": f"{uname}-app",
@@ -170,14 +187,32 @@ class GitHubService:
                 "private": False,
                 "description": f"{uname} Backend Microservice Repository",
             },
-        ]
+        ])
+        return base_repos
 
     async def list_user_repositories(
         self,
         access_token: str | None = None,
         username: str | None = None,
+        target_repo: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Fetch actual user repositories from GitHub REST API."""
+        """Fetch actual user repositories from GitHub REST API with target repo prioritization."""
+        # Sanitize username if URL was provided
+        clean_user = (username or "Ajaymallavali").strip()
+        clean_user = (
+            clean_user.replace("https://github.com/", "")
+            .replace("http://github.com/", "")
+            .replace("git@github.com:", "")
+            .strip("/")
+        )
+        parts = [p for p in clean_user.split("/") if p]
+        if len(parts) >= 2:
+            clean_user = parts[0]
+            if not target_repo:
+                target_repo = parts[1]
+        elif len(parts) == 1:
+            clean_user = parts[0]
+
         headers = {
             "Accept": "application/vnd.github+json",
             "User-Agent": "CodeSense-AI-Backend",
@@ -185,21 +220,21 @@ class GitHubService:
         if access_token and access_token.strip() and access_token != "mock-token":
             headers["Authorization"] = f"Bearer {access_token.strip()}"
             url = f"{GITHUB_API_BASE}/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator"
-        elif username:
-            url = f"{GITHUB_API_BASE}/users/{username}/repos?per_page=100&sort=updated"
+        elif clean_user:
+            url = f"{GITHUB_API_BASE}/users/{clean_user}/repos?per_page=100&sort=updated"
         else:
-            return self._get_fallback_repositories(username)
+            return self._get_fallback_repositories(clean_user, target_repo)
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 res = await client.get(url, headers=headers)
                 if not res.is_success:
                     logger.warning(f"GitHub repos API returned HTTP {res.status_code}")
-                    return self._get_fallback_repositories(username)
+                    return self._get_fallback_repositories(clean_user, target_repo)
 
                 repos = res.json()
                 if not isinstance(repos, list):
-                    return self._get_fallback_repositories(username)
+                    return self._get_fallback_repositories(clean_user, target_repo)
 
                 results = []
                 for r in repos:
@@ -212,12 +247,38 @@ class GitHubService:
                         "private": r.get("private", False),
                         "description": r.get("description"),
                     })
+
+                # If a specific target repository was requested, ensure it is at the front
+                if target_repo:
+                    clean_target = target_repo.strip().split("/")[-1].lower()
+                    target_match = None
+                    filtered_results = []
+                    for item in results:
+                        if item["name"].lower() == clean_target or item["fullName"].lower().endswith(f"/{clean_target}"):
+                            target_match = item
+                        else:
+                            filtered_results.append(item)
+                    if target_match:
+                        results = [target_match, *filtered_results]
+                    else:
+                        # Repo wasn't in the list (or is private/unlisted), synthesize it at the top
+                        synth = {
+                            "id": abs(hash(f"{clean_user}/{target_repo}")) % 1_000_000,
+                            "name": target_repo.split("/")[-1],
+                            "fullName": f"{clean_user}/{target_repo.split('/')[-1]}",
+                            "language": "Python",
+                            "defaultBranch": "main",
+                            "private": False,
+                            "description": f"Target repository {target_repo} for {clean_user}",
+                        }
+                        results = [synth, *results]
+
                 if not results:
-                    return self._get_fallback_repositories(username)
+                    return self._get_fallback_repositories(clean_user, target_repo)
                 return results
         except Exception as exc:
             logger.error(f"Error fetching GitHub repositories: {exc}")
-            return self._get_fallback_repositories(username)
+            return self._get_fallback_repositories(clean_user, target_repo)
 
     async def get_repository_details(
         self,
@@ -225,7 +286,14 @@ class GitHubService:
         access_token: str | None = None,
     ) -> dict[str, Any]:
         """Fetch details for a specific repository from GitHub REST API."""
-        cleaned_repo = repo_full_name.strip().strip("/")
+        cleaned_repo = (
+            repo_full_name.strip()
+            .replace("https://github.com/", "")
+            .replace("http://github.com/", "")
+            .replace("git@github.com:", "")
+            .removesuffix(".git")
+            .strip("/")
+        )
         headers = {
             "Accept": "application/vnd.github+json",
             "User-Agent": "CodeSense-AI-Backend",
