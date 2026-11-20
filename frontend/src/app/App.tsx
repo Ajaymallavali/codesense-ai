@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Analysis, Finding, Repository } from "../types";
 import { useAuth } from "../hooks/useAuth";
-import { githubApi } from "../services/githubApi";
+import { githubApi, saveLocalImportedRepo } from "../services/githubApi";
 import { analysisApi } from "../services/analysisApi";
 import { ProtectedRoute } from "../routes/ProtectedRoute";
 import { DashboardLayout } from "../layouts/DashboardLayout";
@@ -38,13 +38,22 @@ function getInitialReposForUser(username?: string | null): Repository[] {
       },
     ];
   }
+  // Universal dynamic fallback for any recruiter, guest, or developer
   return [
     {
-      id: `repo-${uname.toLowerCase()}-core`,
-      name: `${uname}-core`,
-      fullName: `${uname}/${uname}-core`,
+      id: `repo-${uname.toLowerCase()}-1`,
+      name: `${uname}-platform`,
+      fullName: `${uname}/${uname}-platform`,
       defaultBranch: "main",
       language: "TypeScript",
+      importedAt: new Date().toISOString(),
+    },
+    {
+      id: `repo-${uname.toLowerCase()}-2`,
+      name: `${uname}-api-service`,
+      fullName: `${uname}/${uname}-api-service`,
+      defaultBranch: "main",
+      language: "Python",
       importedAt: new Date().toISOString(),
     },
   ];
@@ -66,27 +75,50 @@ export function App() {
   const [targetFindingFile, setTargetFindingFile] = useState<string | null>(null);
   const [targetFindingId, setTargetFindingId] = useState<string | null>(null);
 
-  // Fetch imported repos on initial mount
+  // Fetch imported repos on initial mount with automatic live GitHub repo discovery
   useEffect(() => {
     if (!user) return;
-    const initialRepos = getInitialReposForUser(user.githubUsername);
+    const cleanUname = (user.githubUsername || "").trim();
+    const fallbackList = getInitialReposForUser(cleanUname);
+
     githubApi
-      .getImportedRepositories(user.githubUsername || undefined)
-      .then((repos) => {
+      .getImportedRepositories(cleanUname || undefined)
+      .then(async (repos) => {
         if (Array.isArray(repos) && repos.length > 0) {
           setImportedRepos(repos);
           if (!activeRepo || !repos.some((r) => r && r.id === activeRepo.id)) {
             setActiveRepo(repos[0]);
           }
-        } else {
-          setImportedRepos(initialRepos);
-          setActiveRepo(initialRepos[0]);
+          return;
         }
+
+        // If no saved imported repos yet, automatically fetch their real GitHub repos!
+        try {
+          const remoteList = await githubApi.getRemoteRepositories(cleanUname || "Ajaymallavali");
+          if (Array.isArray(remoteList) && remoteList.length > 0) {
+            const autoImported: Repository[] = remoteList.slice(0, 5).map((r) => ({
+              id: "repo-" + r.id,
+              name: r.name,
+              fullName: r.fullName || r.full_name || r.name,
+              defaultBranch: r.defaultBranch || r.default_branch || "main",
+              language: r.language || "Python",
+              importedAt: new Date().toISOString(),
+            }));
+            setImportedRepos(autoImported);
+            setActiveRepo(autoImported[0]);
+            autoImported.forEach((ai) => saveLocalImportedRepo(ai, cleanUname));
+            return;
+          }
+        } catch (fetchErr) {
+          console.warn("Could not auto-fetch user GitHub repositories:", fetchErr);
+        }
+
+        setImportedRepos(fallbackList);
+        setActiveRepo(fallbackList[0]);
       })
-      .catch((err) => {
-        console.warn("Could not load repositories from backend; using personalized user repository list:", err);
-        setImportedRepos(initialRepos);
-        setActiveRepo(initialRepos[0]);
+      .catch(() => {
+        setImportedRepos(fallbackList);
+        setActiveRepo(fallbackList[0]);
       });
   }, [user]);
 

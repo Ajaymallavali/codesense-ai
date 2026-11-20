@@ -61,7 +61,7 @@ export function RepositoryPage({
 }: RepositoryPageProps) {
   const { user } = useAuth();
   const [importMode, setImportMode] = useState<"select" | "manual">("select");
-  const [githubUsername, setGithubUsername] = useState(user?.githubUsername || "Ajaymallavali");
+  const [githubUsername, setGithubUsername] = useState(user?.githubUsername || "");
 
   useEffect(() => {
     if (user?.githubUsername) {
@@ -328,7 +328,7 @@ export function RepositoryPage({
                     type="text"
                     value={githubUsername}
                     onChange={(e) => setGithubUsername(e.target.value)}
-                    placeholder="e.g. Sravannii-24 or https://github.com/owner/repo"
+                    placeholder="e.g. your-username, octocat, or https://github.com/owner/repo"
                     className="flex-1 rounded border border-[#1c293e] bg-[#05080f] px-2.5 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/40 outline-none transition"
                   />
                   <Button

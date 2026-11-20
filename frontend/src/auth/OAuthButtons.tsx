@@ -43,7 +43,7 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isGithubLoading, setIsGithubLoading] = useState(false);
   const [showGithubModal, setShowGithubModal] = useState(false);
-  const [customUsername, setCustomUsername] = useState("Ajaymallavali");
+  const [customUsername, setCustomUsername] = useState("");
   const [customToken, setCustomToken] = useState("");
   const [showCustomFields, setShowCustomFields] = useState(true);
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
@@ -250,121 +250,130 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
               </button>
             </div>
 
-            {/* Fast 1-Click Card: Ajaymallavali (Default Developer Account) */}
-            <div className="rounded-xl border border-emerald-500/40 bg-gradient-to-br from-emerald-950/30 to-[#0a1322] p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <img
-                    src="https://github.com/Ajaymallavali.png"
-                    alt="Ajaymallavali"
-                    className="w-10 h-10 rounded-full border-2 border-emerald-400/80 object-cover shadow-sm"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = "none";
-                    }}
-                  />
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold text-slate-100">Ajay Mallavalli</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                        Default
-                      </span>
-                    </div>
-                    <p className="text-xs font-mono text-emerald-400">@Ajaymallavali</p>
-                  </div>
-                </div>
-                <Sparkles size={16} className="text-emerald-400 animate-pulse" />
+            {/* 1. Universal Sign-in for Any User, Recruiter, or Colleague */}
+            <div className="rounded-xl border border-emerald-500/40 bg-gradient-to-br from-emerald-950/40 to-[#070b13] p-4 space-y-3">
+              <div>
+                <span className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
+                  <Github size={15} className="text-emerald-400" />
+                  Connect Any GitHub Account
+                </span>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Enter your GitHub username to inspect and audit your own repositories in real-time.
+                </p>
               </div>
 
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                One-click instant authentication: Syncs <span className="text-slate-200 font-medium">TREND-TECH-2</span> and personal repositories directly into your dashboard.
-              </p>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                  GitHub Username or Profile URL
+                </label>
+                <div className="relative">
+                  <UserIcon size={14} className="absolute left-3 top-2.5 text-emerald-400" />
+                  <input
+                    type="text"
+                    value={customUsername}
+                    onChange={(e) => setCustomUsername(e.target.value)}
+                    placeholder="e.g. your-username, octocat, or torvalds"
+                    className="w-full rounded-lg border border-[#1e2d42] bg-[#05080f] pl-9 pr-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-emerald-500 focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                  Personal Access Token (optional - for private repos)
+                </label>
+                <div className="relative">
+                  <Key size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="password"
+                    value={customToken}
+                    onChange={(e) => setCustomToken(e.target.value)}
+                    placeholder="ghp_... (optional)"
+                    className="w-full rounded-lg border border-[#1e2d42] bg-[#05080f] pl-9 pr-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                  />
+                </div>
+              </div>
 
               <button
                 type="button"
-                onClick={() => handleDirectGithubLogin("Ajaymallavali")}
+                onClick={() => handleDirectGithubLogin(customUsername.trim() || "recruiter-guest", customToken)}
                 disabled={isGithubLoading}
                 className="w-full flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-xs font-bold text-slate-950 shadow-md hover:from-emerald-400 hover:to-teal-400 active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
               >
                 {isGithubLoading ? (
-                  <span>Authenticating & Loading Repositories...</span>
+                  <span>Connecting & Loading Repositories...</span>
                 ) : (
                   <>
-                    <span>Sign in as @Ajaymallavali</span>
+                    <span>Connect @{customUsername.trim() || "your-account"} & Open Dashboard</span>
                     <ArrowRight size={14} />
                   </>
                 )}
               </button>
             </div>
 
-            {/* Custom GitHub Account Form */}
-            <div className="space-y-3">
-              <button
-                type="button"
-                onClick={() => setShowCustomFields(!showCustomFields)}
-                className="text-xs text-emerald-400 hover:text-emerald-300 transition flex items-center gap-1.5 font-medium cursor-pointer"
-              >
-                <span>{showCustomFields ? "− Hide custom account fields" : "+ Sign in with a different GitHub username"}</span>
-              </button>
-
-              {showCustomFields && (
-                <div className="space-y-3 pt-1 border-t border-slate-800">
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                      GitHub Username
-                    </label>
-                    <div className="relative">
-                      <UserIcon size={14} className="absolute left-3 top-2.5 text-emerald-400" />
-                      <input
-                        type="text"
-                        value={customUsername}
-                        onChange={(e) => setCustomUsername(e.target.value)}
-                        placeholder="e.g. octocat"
-                        className="w-full rounded-lg border border-[#1e2d42] bg-[#070b13] pl-9 pr-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                      Personal Access Token (optional)
-                    </label>
-                    <div className="relative">
-                      <Key size={14} className="absolute left-3 top-2.5 text-emerald-400" />
-                      <input
-                        type="password"
-                        value={customToken}
-                        onChange={(e) => setCustomToken(e.target.value)}
-                        placeholder="ghp_... (optional for private repos)"
-                        className="w-full rounded-lg border border-[#1e2d42] bg-[#070b13] pl-9 pr-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDirectGithubLogin(customUsername, customToken)}
-                    disabled={isGithubLoading || !customUsername.trim()}
-                    className="w-full flex items-center justify-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-950/40 px-4 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-900/50 transition cursor-pointer disabled:opacity-40"
-                  >
-                    <span>Connect @{customUsername.trim() || "user"} & Load Repos</span>
-                    <ArrowRight size={13} />
-                  </button>
-                </div>
-              )}
-
-              {/* Official OAuth Redirect Option if Configured */}
-              {isOauthConfigured && oauthUrl && (
-                <div className="pt-2 border-t border-slate-800">
-                  <a
-                    href={oauthUrl}
-                    className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 transition"
-                  >
-                    <Github size={14} />
-                    <span>Authorize with GitHub OAuth</span>
-                  </a>
-                </div>
-              )}
+            <div className="relative flex items-center justify-center">
+              <div className="w-full border-t border-slate-800" />
+              <span className="bg-[#0c1424] px-2 text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                Or Quick 1-Click Tours
+              </span>
             </div>
+
+            {/* 2. Fast 1-Click Card: Ajay Mallavalli (Creator Portfolio & TREND-TECH-2) */}
+            <div className="rounded-xl border border-slate-700/60 bg-[#070b13] p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <img
+                    src="https://github.com/Ajaymallavali.png"
+                    alt="Ajaymallavali"
+                    className="w-8 h-8 rounded-full border border-emerald-400/80 object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = "none";
+                    }}
+                  />
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-slate-100">Ajay Mallavalli</span>
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        Creator
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-mono text-emerald-400">@Ajaymallavali</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDirectGithubLogin("Ajaymallavali")}
+                  disabled={isGithubLoading}
+                  className="rounded-lg border border-emerald-500/40 bg-emerald-950/40 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-900/50 transition cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  Explore Creator Demo &rarr;
+                </button>
+              </div>
+            </div>
+
+            {/* 3. Instant 1-Click Recruiter Guest Access */}
+            <button
+              type="button"
+              onClick={() => handleDirectGithubLogin("recruiter-guest")}
+              disabled={isGithubLoading}
+              className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700/80 transition cursor-pointer"
+            >
+              <Sparkles size={14} className="text-amber-400" />
+              <span>Instant Recruiter / Guest Demo (No account needed)</span>
+            </button>
+
+            {/* Official OAuth Redirect Option if Configured */}
+            {isOauthConfigured && oauthUrl && (
+              <div className="pt-2 border-t border-slate-800">
+                <a
+                  href={oauthUrl}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 transition"
+                >
+                  <Github size={14} />
+                  <span>Authorize with GitHub OAuth</span>
+                </a>
+              </div>
+            )}
           </div>
         </div>
       )}

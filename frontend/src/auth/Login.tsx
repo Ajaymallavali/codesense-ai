@@ -11,8 +11,8 @@ interface LoginProps {
 
 export function Login({ onSwitchMode }: LoginProps) {
   const { login } = useAuth();
-  const [email, setEmail] = useState("ajay@example.com");
-  const [password, setPassword] = useState("codesense123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
@@ -98,6 +98,19 @@ export function Login({ onSwitchMode }: LoginProps) {
         <Button type="submit" variant="primary" size="md" className="w-full mt-2" isLoading={isLoading}>
           Sign In
         </Button>
+
+        <div className="flex justify-center pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              setEmail("ajay@example.com");
+              setPassword("codesense123");
+            }}
+            className="text-[11px] text-emerald-400/80 hover:text-emerald-300 transition cursor-pointer underline"
+          >
+            Fill Demo Credentials (ajay@example.com)
+          </button>
+        </div>
       </form>
 
       <OAuthButtons mode="login" onError={(msg) => setError(msg)} />
