@@ -4,7 +4,11 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
-import redis
+try:
+    import redis
+except ImportError:
+    redis = None
+
 from fastapi import BackgroundTasks
 
 from app.ai_client import ai_client
@@ -19,8 +23,10 @@ REDIS_JOB_PREFIX = "codesense:job:"
 REDIS_CACHE_PREFIX = "codesense:cache:analysis:"
 
 
-def get_redis_client() -> redis.Redis | None:
+def get_redis_client() -> Any | None:
     """Return a connected Redis client, or None if unavailable."""
+    if redis is None:
+        return None
     try:
         client = redis.Redis.from_url(
             settings.redis_url,

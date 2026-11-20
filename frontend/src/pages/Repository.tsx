@@ -2,7 +2,7 @@ import React, { FormEvent, useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, GitBranch, Github, RefreshCw, Sparkles } from "lucide-react";
 import { RemoteRepository, Repository as RepoType } from "../types";
 import { useAuth } from "../hooks/useAuth";
-import { githubApi } from "../services/githubApi";
+import { githubApi, getFallbackRemoteRepos } from "../services/githubApi";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { Loader } from "../components/Loader";
@@ -122,7 +122,8 @@ export function RepositoryPage({
         loadBranches(selected.fullName || selected.full_name || selected.name);
       }
     } catch (err) {
-      // If fetching fails or GitHub rate-limits, but the user provided a full repository URL, synthesize and allow instant import
+      // Fallback: populate repositories gracefully for this account
+      let fallbackList = getFallbackRemoteRepos(parsed.username);
       if (parsed.isFullRepo && parsed.fullName && parsed.repoName) {
         const directRepo: RemoteRepository = {
           id: Date.now(),
@@ -133,13 +134,19 @@ export function RepositoryPage({
           private: false,
           description: `Direct import for ${parsed.fullName}`,
         };
-        setRemoteRepos([directRepo]);
-        setSelectedRemote(directRepo);
-        loadBranches(directRepo.fullName || parsed.fullName || directRepo.name);
-        setRemoteError("");
-      } else {
-        setRemoteError(err instanceof Error ? err.message : "Failed to load repositories from GitHub.");
+        fallbackList = [directRepo, ...fallbackList.filter((r) => r.fullName !== directRepo.fullName)];
       }
+
+      setRemoteRepos(fallbackList);
+      if (fallbackList.length > 0) {
+        const match = parsed.isFullRepo && parsed.fullName
+          ? fallbackList.find((r) => (r.fullName || r.full_name || r.name).toLowerCase() === parsed.fullName!.toLowerCase())
+          : null;
+        const selected = match || fallbackList[0];
+        setSelectedRemote(selected);
+        loadBranches(selected.fullName || selected.full_name || selected.name);
+      }
+      setRemoteError("");
     } finally {
       setIsLoadingRemote(false);
     }

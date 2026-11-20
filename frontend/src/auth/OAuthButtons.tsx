@@ -45,7 +45,7 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
   const [showGithubModal, setShowGithubModal] = useState(false);
   const [customUsername, setCustomUsername] = useState("Ajaymallavali");
   const [customToken, setCustomToken] = useState("");
-  const [showCustomFields, setShowCustomFields] = useState(false);
+  const [showCustomFields, setShowCustomFields] = useState(true);
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
   const [isOauthConfigured, setIsOauthConfigured] = useState(false);
 

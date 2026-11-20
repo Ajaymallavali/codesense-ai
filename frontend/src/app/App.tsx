@@ -13,6 +13,43 @@ import { SettingsPage } from "../pages/Settings";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { FALLBACK_REPOSITORIES, FALLBACK_ANALYSIS, FALLBACK_FINDINGS } from "../services/fallbackData";
 
+function getInitialReposForUser(username?: string | null): Repository[] {
+  const uname = (username || "Ajaymallavali").trim();
+  if (uname.toLowerCase() === "ajaymallavali") {
+    return FALLBACK_REPOSITORIES;
+  }
+  if (uname.toLowerCase() === "sravannii-24") {
+    return [
+      {
+        id: "repo-sravannii-finance",
+        name: "finance-analytics-platform-for-financial-reporting-and-budget-tracking",
+        fullName: "Sravannii-24/finance-analytics-platform-for-financial-reporting-and-budget-tracking",
+        defaultBranch: "main",
+        language: "Python",
+        importedAt: new Date().toISOString(),
+      },
+      {
+        id: "repo-sravannii-airlink",
+        name: "Airlink-project",
+        fullName: "Sravannii-24/Airlink-project",
+        defaultBranch: "main",
+        language: "HTML",
+        importedAt: new Date().toISOString(),
+      },
+    ];
+  }
+  return [
+    {
+      id: `repo-${uname.toLowerCase()}-core`,
+      name: `${uname}-core`,
+      fullName: `${uname}/${uname}-core`,
+      defaultBranch: "main",
+      language: "TypeScript",
+      importedAt: new Date().toISOString(),
+    },
+  ];
+}
+
 export function App() {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<string>("dashboard");
@@ -32,8 +69,9 @@ export function App() {
   // Fetch imported repos on initial mount
   useEffect(() => {
     if (!user) return;
+    const initialRepos = getInitialReposForUser(user.githubUsername);
     githubApi
-      .getImportedRepositories()
+      .getImportedRepositories(user.githubUsername || undefined)
       .then((repos) => {
         if (Array.isArray(repos) && repos.length > 0) {
           setImportedRepos(repos);
@@ -41,14 +79,14 @@ export function App() {
             setActiveRepo(repos[0]);
           }
         } else {
-          setImportedRepos(FALLBACK_REPOSITORIES);
-          setActiveRepo(FALLBACK_REPOSITORIES[0]);
+          setImportedRepos(initialRepos);
+          setActiveRepo(initialRepos[0]);
         }
       })
       .catch((err) => {
-        console.warn("Could not load repositories from backend; using default repository list:", err);
-        setImportedRepos(FALLBACK_REPOSITORIES);
-        setActiveRepo(FALLBACK_REPOSITORIES[0]);
+        console.warn("Could not load repositories from backend; using personalized user repository list:", err);
+        setImportedRepos(initialRepos);
+        setActiveRepo(initialRepos[0]);
       });
   }, [user]);
 
