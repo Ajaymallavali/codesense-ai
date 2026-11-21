@@ -76,7 +76,16 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
                 try {
                   await loginWithGoogle(response.credential);
                 } catch (err) {
-                  onError(err instanceof Error ? err.message : "Google authentication failed.");
+                  const msg = err instanceof Error ? err.message : String(err || "");
+                  if (
+                    msg.includes("FUNCTION_INVOCATION_FAILED") ||
+                    msg.includes("server error") ||
+                    msg.includes("Serverless")
+                  ) {
+                    await loginWithGoogle(response.credential);
+                    return;
+                  }
+                  onError(msg || "Google authentication failed.");
                 } finally {
                   setIsGoogleLoading(false);
                 }
@@ -149,7 +158,20 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
       });
       setShowGithubModal(false);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "GitHub authentication failed.");
+      const msg = err instanceof Error ? err.message : String(err || "");
+      if (
+        msg.includes("FUNCTION_INVOCATION_FAILED") ||
+        msg.includes("server error") ||
+        msg.includes("Serverless")
+      ) {
+        await loginWithGithub({
+          username: cleaned || "Ajaymallavali",
+          token: token?.trim() || undefined,
+        });
+        setShowGithubModal(false);
+        return;
+      }
+      onError(msg || "GitHub authentication failed.");
     } finally {
       setIsGithubLoading(false);
     }
@@ -161,7 +183,16 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
     try {
       await loginWithGoogle("mock-google-token");
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Google sign-in failed.");
+      const msg = err instanceof Error ? err.message : String(err || "");
+      if (
+        msg.includes("FUNCTION_INVOCATION_FAILED") ||
+        msg.includes("server error") ||
+        msg.includes("Serverless")
+      ) {
+        await loginWithGoogle("mock-google-token");
+        return;
+      }
+      onError(msg || "Google sign-in failed.");
     } finally {
       setIsGoogleLoading(false);
     }

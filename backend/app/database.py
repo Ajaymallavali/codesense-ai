@@ -2,9 +2,16 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 import logging
 import time
+from typing import Any
 
-import psycopg
-from psycopg.rows import dict_row
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+    _HAS_PSYCOPG = True
+except ImportError:
+    psycopg = None
+    dict_row = None
+    _HAS_PSYCOPG = False
 
 from app.config import settings
 
@@ -19,16 +26,31 @@ class DatabaseCircuitOpen(Exception):
     pass
 
 
+def _clean_db_url(url: str | None) -> str:
+    if not url:
+        return ""
+    # Strip channel_binding=require which causes SCRAM unsupported error on AWS Lambda / Neon poolers
+    return (
+        url.replace("&channel_binding=require", "")
+        .replace("channel_binding=require&", "")
+        .replace("channel_binding=require", "")
+    )
+
+
 @contextmanager
-def get_connection() -> Iterator[psycopg.Connection]:
+def get_connection() -> Iterator[Any]:
     global _DB_LAST_FAIL_TIME
+    if not _HAS_PSYCOPG or not settings.database_url or "localhost" in settings.database_url:
+        raise DatabaseCircuitOpen("Database unavailable or psycopg not installed (using dev_store fallback)")
+
     now = time.time()
     # Fast-fail if database failed within cooldown period
     if now - _DB_LAST_FAIL_TIME < _DB_FAIL_COOLDOWN_SEC:
         raise DatabaseCircuitOpen("Database circuit open (fast fallback to dev_store)")
 
+    clean_url = _clean_db_url(settings.database_url)
     try:
-        with psycopg.connect(settings.database_url, connect_timeout=1, row_factory=dict_row) as connection:
+        with psycopg.connect(clean_url, connect_timeout=1, row_factory=dict_row) as connection:
             _DB_LAST_FAIL_TIME = 0.0
             yield connection
     except Exception:
@@ -37,6 +59,9 @@ def get_connection() -> Iterator[psycopg.Connection]:
 
 
 def initialize_database() -> None:
+    if not _HAS_PSYCOPG:
+        logger.info("psycopg is not installed, skipping database schema initialization; dev_store active.")
+        return
     statements = [
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -170,10 +195,13 @@ def initialize_database() -> None:
 
 
 def check_database_health() -> str:
+    if not _HAS_PSYCOPG:
+        return "LOCAL_FALLBACK (dev_store)"
     try:
         if not settings.database_url or "localhost" in settings.database_url:
             return "LOCAL_FALLBACK (dev_store)"
-        with psycopg.connect(settings.database_url, connect_timeout=3) as connection:
+        clean_url = _clean_db_url(settings.database_url)
+        with psycopg.connect(clean_url, connect_timeout=3) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
                 return "CONNECTED"

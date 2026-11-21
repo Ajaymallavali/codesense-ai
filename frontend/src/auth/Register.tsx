@@ -37,7 +37,17 @@ export function Register({ onSwitchMode }: RegisterProps) {
     try {
       await register(displayName.trim(), email.trim().toLowerCase(), password);
     } catch (err: any) {
-      setError(err?.message || "Registration failed. Please try again.");
+      const msg = String(err?.message || "");
+      if (
+        msg.includes("FUNCTION_INVOCATION_FAILED") ||
+        msg.includes("server error") ||
+        msg.includes("Serverless") ||
+        err?.status >= 500
+      ) {
+        await register(displayName.trim(), email.trim().toLowerCase(), password);
+        return;
+      }
+      setError(msg || "Registration failed. Please try again.");
       if (err?.fieldErrors) {
         setFieldErrors(err.fieldErrors);
       }

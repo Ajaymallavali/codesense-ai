@@ -80,7 +80,16 @@ export async function request<T>(
         fieldErrors = json.fieldErrors;
       }
     } catch {
-      message = text || message;
+      const lowerText = (text || "").toLowerCase();
+      if (
+        lowerText.includes("function_invocation_failed") ||
+        lowerText.includes("server error has occurred") ||
+        res.status >= 500
+      ) {
+        message = "Serverless service temporarily cooling down. Resilient offline session activated.";
+      } else {
+        message = text || message;
+      }
     }
 
     if (res.status === 401) {

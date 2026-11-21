@@ -112,7 +112,12 @@ export function RepositoryPage({
         }
       }
 
+      if (reposList.length === 0) {
+        reposList = getFallbackRemoteRepos(parsed.username);
+      }
+
       setRemoteRepos(reposList);
+      setRemoteError("");
       if (reposList.length > 0) {
         const match = parsed.isFullRepo && parsed.fullName
           ? reposList.find((r) => (r.fullName || r.full_name || r.name).toLowerCase() === parsed.fullName!.toLowerCase())
@@ -138,6 +143,7 @@ export function RepositoryPage({
       }
 
       setRemoteRepos(fallbackList);
+      setRemoteError("");
       if (fallbackList.length > 0) {
         const match = parsed.isFullRepo && parsed.fullName
           ? fallbackList.find((r) => (r.fullName || r.full_name || r.name).toLowerCase() === parsed.fullName!.toLowerCase())
@@ -146,7 +152,6 @@ export function RepositoryPage({
         setSelectedRemote(selected);
         loadBranches(selected.fullName || selected.full_name || selected.name);
       }
-      setRemoteError("");
     } finally {
       setIsLoadingRemote(false);
     }

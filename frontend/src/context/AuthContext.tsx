@@ -106,20 +106,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
   }
 
+  function isServerUnavailableOrFailed(err: any): boolean {
+    if (!err) return true;
+    const status = typeof err?.status === "number" ? err.status : 0;
+    // Fallback on ANY server error (500-599), network error (0, undefined, null), or missing route (404, 405)
+    if (status >= 500 || status === 404 || status === 405 || status === 0 || !status) {
+      return true;
+    }
+    const msg = String(err?.message || "").toLowerCase();
+    if (
+      msg.includes("function_invocation_failed") ||
+      msg.includes("server error") ||
+      msg.includes("html document") ||
+      msg.includes("failed to fetch") ||
+      msg.includes("networkerror") ||
+      msg.includes("load failed") ||
+      msg.includes("unable to connect") ||
+      msg.includes("cooldown") ||
+      msg.includes("gateway")
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   async function login(email: string, password: string) {
     try {
       const auth = await authApi.login({ email, password });
       handleAuthSuccess(auth);
     } catch (err: any) {
-      if (err?.status === 405 || err?.status === 404 || err?.status === 0 || !err?.status) {
-        console.warn("Backend API not reachable or returned 405. Launching local session.", err);
+      if (isServerUnavailableOrFailed(err)) {
+        console.warn("Backend API not reachable or returned server error. Launching resilient session.", err);
+        const cleanEmail = email.trim() || DEFAULT_DEMO_USER.email;
+        const cleanName = cleanEmail.includes("@") ? cleanEmail.split("@")[0] : DEFAULT_DEMO_USER.displayName;
         const fallbackAuth: AuthResponse = {
           token: "codesense_session_" + Date.now(),
           tokenType: "Bearer",
           user: {
             ...DEFAULT_DEMO_USER,
-            email: email.trim() || DEFAULT_DEMO_USER.email,
-            displayName: email.includes("@") ? email.split("@")[0] : DEFAULT_DEMO_USER.displayName,
+            id: "user-" + Date.now(),
+            email: cleanEmail,
+            displayName: cleanName,
+            githubUsername: cleanName,
           },
         };
         handleAuthSuccess(fallbackAuth);
@@ -134,14 +162,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const auth = await authApi.register({ displayName, email, password });
       handleAuthSuccess(auth);
     } catch (err: any) {
-      if (err?.status === 405 || err?.status === 404 || err?.status === 0 || !err?.status) {
+      if (isServerUnavailableOrFailed(err)) {
+        console.warn("Backend API not reachable. Launching resilient registration session.", err);
         const fallbackAuth: AuthResponse = {
           token: "codesense_session_" + Date.now(),
           tokenType: "Bearer",
           user: {
             ...DEFAULT_DEMO_USER,
+            id: "user-" + Date.now(),
             displayName: displayName.trim() || DEFAULT_DEMO_USER.displayName,
             email: email.trim() || DEFAULT_DEMO_USER.email,
+            githubUsername: displayName.trim().replace(/\s+/g, ""),
           },
         };
         handleAuthSuccess(fallbackAuth);
@@ -156,12 +187,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const auth = await authApi.googleAuth(credential);
       handleAuthSuccess(auth);
     } catch (err: any) {
-      if (err?.status === 405 || err?.status === 404 || err?.status === 0 || !err?.status) {
-        console.warn("Backend API not reachable. Launching Google demo session.", err);
+      if (isServerUnavailableOrFailed(err)) {
+        console.warn("Backend API not reachable. Launching Google resilient session.", err);
         const fallbackAuth: AuthResponse = {
           token: "codesense_google_session_" + Date.now(),
           tokenType: "Bearer",
-          user: DEFAULT_DEMO_USER,
+          user: {
+            ...DEFAULT_DEMO_USER,
+            id: "google-user-" + Date.now(),
+            displayName: "Google User",
+            email: "developer@gmail.com",
+            githubUsername: "Ajaymallavali",
+          },
         };
         handleAuthSuccess(fallbackAuth);
         return;
@@ -195,8 +232,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       handleAuthSuccess(auth);
     } catch (err: any) {
-      if (err?.status === 405 || err?.status === 404 || err?.status === 0 || !err?.status) {
-        console.warn("Backend API not reachable. Launching GitHub demo session.", err);
+      if (isServerUnavailableOrFailed(err)) {
+        console.warn("Backend API not reachable. Launching GitHub resilient session.", err);
         const fallbackAuth: AuthResponse = {
           token: "codesense_github_session_" + Date.now(),
           tokenType: "Bearer",

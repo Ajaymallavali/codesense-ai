@@ -36,7 +36,10 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    initialize_database()
+    try:
+        initialize_database()
+    except Exception as exc:
+        logger.warning("Database initialization deferred during startup: %s", exc)
     yield
 
 

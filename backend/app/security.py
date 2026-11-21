@@ -1,5 +1,4 @@
 import base64
-import bcrypt
 import hashlib
 import hmac
 import json
@@ -7,6 +6,13 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
+
+try:
+    import bcrypt
+    _HAS_BCRYPT = True
+except ImportError:
+    bcrypt = None
+    _HAS_BCRYPT = False
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -20,12 +26,24 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
+    if _HAS_BCRYPT and bcrypt is not None:
+        try:
+            return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
+        except Exception:
+            pass
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100000)
+    return f"pbkdf2_sha256$100000${_b64(salt)}${_b64(digest)}"
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    if password_hash.startswith("$2a$") or password_hash.startswith("$2b$") or password_hash.startswith("$2y$"):
-        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    if password_hash.startswith(("$2a$", "$2b$", "$2y$")):
+        if _HAS_BCRYPT and bcrypt is not None:
+            try:
+                return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+            except Exception:
+                pass
+        return False
 
     try:
         algorithm, iterations, salt_b64, digest_b64 = password_hash.split("$", 3)
