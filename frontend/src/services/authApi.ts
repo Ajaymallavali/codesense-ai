@@ -38,10 +38,13 @@ export const authApi = {
     return request<{ configured: boolean; url: string; message?: string }>("/auth/github/url");
   },
 
-  async exchangeGithubCode(code: string): Promise<AuthResponse> {
+  async exchangeGithubCode(code: string, redirectUri?: string): Promise<AuthResponse> {
     return request<AuthResponse>("/auth/github/exchange", {
       method: "POST",
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({
+        code,
+        redirect_uri: redirectUri || (typeof window !== "undefined" ? `${window.location.origin}/` : undefined),
+      }),
     });
   },
 

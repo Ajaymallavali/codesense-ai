@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(true);
         window.history.replaceState({}, document.title, window.location.pathname);
         authApi
-          .exchangeGithubCode(code)
+          .exchangeGithubCode(code, `${window.location.origin}/`)
           .then((auth) => {
             if (auth && auth.token && auth.user) {
               handleAuthSuccess(auth);

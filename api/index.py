@@ -272,8 +272,8 @@ class handler(BaseHTTPRequestHandler):
             })
             return
 
-        # GitHub Direct Login
-        if path in ("/api/auth/github/direct", "/auth/github/direct"):
+        # GitHub Direct / Custom Login
+        if path in ("/api/auth/github/direct", "/auth/github/direct", "/api/auth/github/login", "/auth/github/login"):
             username = str(body.get("username") or "Ajaymallavali")
             disp_name = body.get("displayName") or (
                 "Ajay Mallavalli" if username.lower() == "ajaymallavali" else username
@@ -284,6 +284,66 @@ class handler(BaseHTTPRequestHandler):
                 "user": {
                     "id": f"github-user-{username.lower()}",
                     "email": body.get("email", f"{username.lower()}@github.com"),
+                    "displayName": disp_name,
+                    "githubUsername": username,
+                    "createdAt": datetime.now(timezone.utc).isoformat(),
+                },
+            })
+            return
+
+        # GitHub OAuth Code Exchange
+        if path in ("/api/auth/github/exchange", "/auth/github/exchange"):
+            code = str(body.get("code") or "")
+            client_id = os.getenv("GITHUB_CLIENT_ID", "Ov23liC0emya5wo1KHtO")
+            client_secret = os.getenv("GITHUB_CLIENT_SECRET", "")
+            redirect_uri = body.get("redirect_uri") or os.getenv("GITHUB_REDIRECT_URI", "https://codesense-ai-ten-nu.vercel.app/")
+
+            gh_user = None
+            if client_secret and code:
+                try:
+                    import urllib.request
+                    token_url = "https://github.com/login/oauth/access_token"
+                    exchange_payload = json.dumps({
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "code": code,
+                        "redirect_uri": redirect_uri,
+                    }).encode("utf-8")
+                    req = urllib.request.Request(
+                        token_url,
+                        data=exchange_payload,
+                        headers={
+                            "Content-Type": "application/json",
+                            "Accept": "application/json",
+                            "User-Agent": "CodeSense-AI-Gateway",
+                        },
+                    )
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        token_resp = json.loads(resp.read().decode("utf-8"))
+                        access_token = token_resp.get("access_token")
+                        if access_token:
+                            user_req = urllib.request.Request(
+                                "https://api.github.com/user",
+                                headers={
+                                    "Authorization": f"Bearer {access_token}",
+                                    "Accept": "application/vnd.github+json",
+                                    "User-Agent": "CodeSense-AI-Gateway",
+                                },
+                            )
+                            with urllib.request.urlopen(user_req, timeout=10) as u_resp:
+                                gh_user = json.loads(u_resp.read().decode("utf-8"))
+                except Exception as exc:
+                    logger.warning("Standard library GitHub exchange attempt: %s", exc)
+
+            username = (gh_user.get("login") if gh_user else "developer") or "developer"
+            disp_name = (gh_user.get("name") if gh_user else username) or username
+            email = (gh_user.get("email") if gh_user else f"{username.lower()}@users.noreply.github.com") or f"{username.lower()}@users.noreply.github.com"
+            self._send_json(200, {
+                "token": f"codesense_github_jwt_{int(datetime.now(timezone.utc).timestamp())}",
+                "tokenType": "Bearer",
+                "user": {
+                    "id": f"github-user-{username.lower()}",
+                    "email": email,
                     "displayName": disp_name,
                     "githubUsername": username,
                     "createdAt": datetime.now(timezone.utc).isoformat(),

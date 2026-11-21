@@ -51,17 +51,19 @@ class GitHubService:
             "url": f"{GITHUB_OAUTH_AUTHORIZE}?{query_string}",
         }
 
-    async def exchange_code_for_token(self, code: str) -> dict[str, Any]:
+    async def exchange_code_for_token(self, code: str, redirect_uri: str | None = None) -> dict[str, Any]:
         """Exchange temporary OAuth code for access token with GitHub."""
         if not self.client_id or not self.client_secret:
             raise GitHubServiceError("GitHub OAuth credentials are not configured on this server.")
 
-        payload = {
+        payload: dict[str, Any] = {
             "client_id": self.client_id,
             "client_secret": self.client_secret,
             "code": code,
-            "redirect_uri": self.redirect_uri,
         }
+        target_redirect = redirect_uri or self.redirect_uri
+        if target_redirect:
+            payload["redirect_uri"] = target_redirect
         headers = {
             "Accept": "application/json",
             "User-Agent": "CodeSense-AI-Backend",

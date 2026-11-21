@@ -403,7 +403,7 @@ async def github_oauth_callback(code: str, state: str | None = None) -> Redirect
 async def github_oauth_exchange(payload: GitHubCallbackRequest) -> AuthResponse:
     """Programmatic OAuth code exchange endpoint."""
     try:
-        token_data = await github_service.exchange_code_for_token(payload.code)
+        token_data = await github_service.exchange_code_for_token(payload.code, redirect_uri=payload.redirect_uri)
         access_token = token_data.get("access_token")
         if not access_token:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No access token returned by GitHub.")

@@ -30,6 +30,7 @@ class GoogleAuthRequest(BaseModel):
 
 class GitHubCallbackRequest(BaseModel):
     code: str = Field(min_length=1)
+    redirect_uri: str | None = None
 
 
 class GitHubDirectLoginRequest(BaseModel):
