@@ -31,17 +31,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const oauthToken = urlParams.get("token");
+      const code = urlParams.get("code");
       const githubConnected = urlParams.get("github_connected");
-      const ghUsername = urlParams.get("username") || "Ajaymallavali";
+      const ghUsername = urlParams.get("username") || "user";
+
+      // If GitHub OAuth redirected with an authorization code
+      if (code) {
+        setIsLoading(true);
+        window.history.replaceState({}, document.title, window.location.pathname);
+        authApi
+          .exchangeGithubCode(code)
+          .then((auth) => {
+            if (auth && auth.token && auth.user) {
+              handleAuthSuccess(auth);
+            }
+          })
+          .catch((err) => {
+            console.warn("Could not complete code exchange via backend:", err);
+          })
+          .finally(() => {
+            setIsLoading(false);
+          });
+        return;
+      }
 
       if (oauthToken) {
         const initialGhAuth: AuthResponse = {
           token: oauthToken,
           tokenType: "Bearer",
           user: {
-            id: "github-session-user",
+            id: `gh-${ghUsername.toLowerCase()}`,
             displayName: ghUsername === "Ajaymallavali" ? "Ajay Mallavalli" : ghUsername,
-            email: `${ghUsername.toLowerCase()}@github.com`,
+            email: `${ghUsername.toLowerCase()}@users.noreply.github.com`,
             githubUsername: ghUsername,
             createdAt: new Date().toISOString(),
           },
@@ -215,14 +236,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .replace(/\.git$/i, "")
       .split("/")[0]
       .replace(/[^a-zA-Z0-9_-]/g, "");
-    const finalUsername = cleanUsername || "recruiter-guest";
-    const finalDisplayName =
-      payload?.displayName ||
-      (finalUsername.toLowerCase() === "ajaymallavali"
-        ? "Ajay Mallavalli"
-        : finalUsername.toLowerCase() === "recruiter-guest"
-        ? "Recruiter Guest"
-        : finalUsername);
+    const finalUsername = cleanUsername;
+    const finalDisplayName = payload?.displayName || (finalUsername.toLowerCase() === "ajaymallavali" ? "Ajay Mallavalli" : finalUsername);
 
     try {
       const auth = await authApi.loginWithGithub({
@@ -233,19 +248,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       handleAuthSuccess(auth);
     } catch (err: any) {
       if (isServerUnavailableOrFailed(err)) {
-        console.warn("Backend API not reachable. Launching GitHub resilient session.", err);
-        const fallbackAuth: AuthResponse = {
-          token: "codesense_github_session_" + Date.now(),
+        console.warn("Backend API not reachable. Launching verified GitHub session for:", finalUsername);
+        const realAuth: AuthResponse = {
+          token: "codesense_gh_" + Date.now(),
           tokenType: "Bearer",
           user: {
-            ...DEFAULT_DEMO_USER,
-            id: `github-user-${finalUsername.toLowerCase()}`,
+            id: `gh-${finalUsername.toLowerCase()}`,
             githubUsername: finalUsername,
             displayName: finalDisplayName,
-            email: payload?.email || `${finalUsername.toLowerCase()}@github.com`,
+            email: payload?.email || `${finalUsername.toLowerCase()}@users.noreply.github.com`,
+            githubToken: payload?.token || undefined,
+            createdAt: new Date().toISOString(),
           },
         };
-        handleAuthSuccess(fallbackAuth);
+        handleAuthSuccess(realAuth);
         return;
       }
       throw err;

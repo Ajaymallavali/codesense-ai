@@ -36,6 +36,22 @@ function getInitialReposForUser(username?: string | null): Repository[] {
         language: "HTML",
         importedAt: new Date().toISOString(),
       },
+      {
+        id: "repo-sravannii-llm",
+        name: "LLM-Agent",
+        fullName: "Sravannii-24/LLM-Agent",
+        defaultBranch: "main",
+        language: "Shell",
+        importedAt: new Date().toISOString(),
+      },
+      {
+        id: "repo-sravannii-git",
+        name: "Git-Commands",
+        fullName: "Sravannii-24/Git-Commands",
+        defaultBranch: "master",
+        language: "Markdown",
+        importedAt: new Date().toISOString(),
+      },
     ];
   }
   // Universal dynamic fallback for any recruiter, guest, or developer

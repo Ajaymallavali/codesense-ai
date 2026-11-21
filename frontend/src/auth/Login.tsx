@@ -119,7 +119,7 @@ export function Login({ onSwitchMode }: LoginProps) {
             }}
             className="text-[11px] text-emerald-400/80 hover:text-emerald-300 transition cursor-pointer underline"
           >
-            Fill Demo Credentials (ajay@example.com)
+            Quick Fill Credentials (ajay@example.com)
           </button>
         </div>
       </form>

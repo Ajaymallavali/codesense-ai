@@ -156,20 +156,30 @@ export function getFallbackRemoteRepos(username?: string): RemoteRepository[] {
 
 export const githubApi = {
   async getImportedRepositories(username?: string): Promise<Repository[]> {
-    // 1. Try backend
-    try {
-      const repos = await request<Repository[]>("/repositories");
-      if (Array.isArray(repos) && repos.length > 0) {
-        return repos;
-      }
-    } catch (err) {
-      console.warn("Backend /repositories unavailable, checking locally stored repos:", err);
-    }
+    const cleanUser = cleanGithubUsername(username).toLowerCase();
 
-    // 2. Check local storage
+    // 1. Check local storage first for this specific user's saved repositories
     const local = getLocalImportedRepos(username);
     if (local.length > 0) {
       return local;
+    }
+
+    // 2. Try backend
+    try {
+      const repos = await request<Repository[]>("/repositories");
+      if (Array.isArray(repos) && repos.length > 0) {
+        // Filter repos to match the currently logged in user
+        if (cleanUser && cleanUser !== "ajaymallavali") {
+          const userSpecific = repos.filter(
+            (r) => r.fullName && r.fullName.toLowerCase().startsWith(`${cleanUser}/`)
+          );
+          if (userSpecific.length > 0) return userSpecific;
+        } else {
+          return repos;
+        }
+      }
+    } catch (err) {
+      console.warn("Backend /repositories unavailable, checking locally stored repos:", err);
     }
 
     return [];

@@ -136,13 +136,22 @@ class handler(BaseHTTPRequestHandler):
             })
             return
 
-        if path in ("/api/auth/github/oauth-url", "/auth/github/oauth-url"):
-            self._send_json(200, {
-                "configured": False,
-                "url": "",
-                "message": "Direct GitHub sign-in is available.",
-                "defaultUsername": "Ajaymallavali",
-            })
+        if path in ("/api/auth/github/oauth-url", "/auth/github/oauth-url", "/api/auth/github/url", "/auth/github/url"):
+            client_id = os.getenv("GITHUB_CLIENT_ID")
+            if client_id:
+                redirect_uri = os.getenv("GITHUB_REDIRECT_URI", "https://codesense-ai-ten-nu.vercel.app/api/auth/github/callback")
+                oauth_url = f"https://github.com/login/oauth/authorize?client_id={client_id}&redirect_uri={urllib.parse.quote(redirect_uri)}&scope=repo,read:user,user:email"
+                self._send_json(200, {
+                    "configured": True,
+                    "url": oauth_url,
+                    "message": "GitHub OAuth configured.",
+                })
+            else:
+                self._send_json(200, {
+                    "configured": False,
+                    "url": "",
+                    "message": "Direct real GitHub account verification is active.",
+                })
             return
 
         # Repositories

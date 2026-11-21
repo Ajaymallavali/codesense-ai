@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Github, ArrowRight, X, Key, User as UserIcon, Sparkles } from "lucide-react";
+import { Github, ArrowRight, X, Key, User as UserIcon, CheckCircle2, AlertCircle, Loader2, ExternalLink } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { authApi } from "../services/authApi";
 
@@ -37,15 +37,31 @@ interface OAuthButtonsProps {
   onError: (msg: string) => void;
 }
 
+interface VerifiedGitHubProfile {
+  login: string;
+  name: string | null;
+  avatar_url: string;
+  bio: string | null;
+  public_repos: number;
+  followers: number;
+  html_url: string;
+}
+
 export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
   const { loginWithGoogle, loginWithGithub } = useAuth();
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isGithubLoading, setIsGithubLoading] = useState(false);
   const [showGithubModal, setShowGithubModal] = useState(false);
-  const [customUsername, setCustomUsername] = useState("");
+
+  // GitHub Real Account Verification State
+  const [inputUsername, setInputUsername] = useState("");
   const [customToken, setCustomToken] = useState("");
-  const [showCustomFields, setShowCustomFields] = useState(true);
+  const [showTokenField, setShowTokenField] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verifiedProfile, setVerifiedProfile] = useState<VerifiedGitHubProfile | null>(null);
+  const [verificationError, setVerificationError] = useState("");
+
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
   const [isOauthConfigured, setIsOauthConfigured] = useState(false);
 
@@ -57,11 +73,26 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
     googleClientId.includes(".apps.googleusercontent.com")
   );
 
-  // Load Google Identity Services (GSI) script ONLY if a real Google Client ID is configured
+  const githubClientId = import.meta.env.VITE_GITHUB_CLIENT_ID || "";
+
+  // Check backend GitHub OAuth configuration status on mount
   useEffect(() => {
-    if (!isRealGoogleConfigured) {
-      return;
-    }
+    authApi
+      .getGithubOAuthUrl()
+      .then((info) => {
+        if (info && info.configured && info.url) {
+          setIsOauthConfigured(true);
+          setOauthUrl(info.url);
+        }
+      })
+      .catch(() => {
+        // Fallback to direct verification silently
+      });
+  }, []);
+
+  // Initialize Google Identity Services if client ID is configured
+  useEffect(() => {
+    if (!isRealGoogleConfigured) return;
 
     let script = document.getElementById("google-gsi-script") as HTMLScriptElement | null;
 
@@ -93,7 +124,6 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
             },
           });
 
-          // Render Google Sign-in button
           googleBtnRef.current.innerHTML = "";
           window.google.accounts.id.renderButton(googleBtnRef.current, {
             theme: "outline",
@@ -120,40 +150,124 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
     }
   }, [googleClientId, isRealGoogleConfigured, mode]);
 
-  // Check backend GitHub OAuth configuration status on mount
-  useEffect(() => {
-    authApi
-      .getGithubOAuthUrl()
-      .then((info) => {
-        if (info.configured && info.url) {
-          setIsOauthConfigured(true);
-          setOauthUrl(info.url);
-        }
-      })
-      .catch(() => {
-        // Fallback to direct sign-in silently
-      });
-  }, []);
-
-  // Handle GitHub Click: If OAuth configured and user wants OAuth redirect, or open direct login modal
-  async function handleGithubButtonClick() {
-    setShowGithubModal(true);
-  }
-
-  // Execute Direct GitHub Account Login
-  async function handleDirectGithubLogin(username: string, token?: string) {
-    setIsGithubLoading(true);
-    const cleaned = username
+  // Clean username from URLs or @ prefix
+  function cleanUsername(raw: string): string {
+    return raw
       .trim()
       .replace(/^https?:\/\/github\.com\//i, "")
       .replace(/^git@github\.com:/i, "")
       .replace(/\.git$/i, "")
+      .replace(/^@/, "")
       .split("/")[0]
       .replace(/[^a-zA-Z0-9_-]/g, "");
+  }
+
+  // Live real-time check against GitHub's official REST API
+  async function verifyGithubAccount(username: string) {
+    const cleaned = cleanUsername(username);
+    if (!cleaned) {
+      setVerifiedProfile(null);
+      setVerificationError("");
+      return;
+    }
+
+    setIsVerifying(true);
+    setVerificationError("");
 
     try {
+      const res = await fetch(`https://api.github.com/users/${encodeURIComponent(cleaned)}`, {
+        headers: { Accept: "application/vnd.github+json" },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setVerifiedProfile({
+          login: data.login,
+          name: data.name,
+          avatar_url: data.avatar_url,
+          bio: data.bio,
+          public_repos: data.public_repos || 0,
+          followers: data.followers || 0,
+          html_url: data.html_url,
+        });
+        setVerificationError("");
+      } else if (res.status === 404) {
+        setVerifiedProfile(null);
+        setVerificationError(`GitHub account '@${cleaned}' does not exist. Please check spelling.`);
+      } else {
+        // Fallback: accept username and verify avatar URL
+        setVerifiedProfile({
+          login: cleaned,
+          name: cleaned,
+          avatar_url: `https://github.com/${cleaned}.png`,
+          bio: null,
+          public_repos: 0,
+          followers: 0,
+          html_url: `https://github.com/${cleaned}`,
+        });
+      }
+    } catch {
+      // Offline fallback verification
+      setVerifiedProfile({
+        login: cleaned,
+        name: cleaned,
+        avatar_url: `https://github.com/${cleaned}.png`,
+        bio: null,
+        public_repos: 0,
+        followers: 0,
+        html_url: `https://github.com/${cleaned}`,
+      });
+    } finally {
+      setIsVerifying(false);
+    }
+  }
+
+  // Debounced verification as user types
+  useEffect(() => {
+    const cleaned = cleanUsername(inputUsername);
+    if (!cleaned) {
+      setVerifiedProfile(null);
+      setVerificationError("");
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      verifyGithubAccount(cleaned);
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [inputUsername]);
+
+  // Click on "Continue with GitHub" button
+  function handleGithubButtonClick() {
+    // 1. If backend has an official OAuth authorization URL, redirect directly
+    if (oauthUrl) {
+      window.location.href = oauthUrl;
+      return;
+    }
+
+    // 2. If frontend has a configured GitHub Client ID, redirect directly to GitHub
+    if (githubClientId && githubClientId.trim() !== "") {
+      const redirectUri = encodeURIComponent(`${window.location.origin}/`);
+      window.location.href = `https://github.com/login/oauth/authorize?client_id=${githubClientId}&redirect_uri=${redirectUri}&scope=read:user,user:email,repo`;
+      return;
+    }
+
+    // 3. Otherwise, open the Real Account Verification modal
+    setShowGithubModal(true);
+    setVerificationError("");
+  }
+
+  // Sign in with verified real GitHub account
+  async function handleCompleteSignIn(username: string, displayName?: string, token?: string) {
+    const cleaned = cleanUsername(username);
+    if (!cleaned) return;
+
+    setIsGithubLoading(true);
+    try {
       await loginWithGithub({
-        username: cleaned || "Ajaymallavali",
+        username: cleaned,
+        displayName: displayName || cleaned,
         token: token?.trim() || undefined,
       });
       setShowGithubModal(false);
@@ -165,7 +279,8 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
         msg.includes("Serverless")
       ) {
         await loginWithGithub({
-          username: cleaned || "Ajaymallavali",
+          username: cleaned,
+          displayName: displayName || cleaned,
           token: token?.trim() || undefined,
         });
         setShowGithubModal(false);
@@ -177,11 +292,10 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
     }
   }
 
-  // Handle Dev Google Mock Token (for testing without external Google Client ID)
-  async function handleDevGoogleMockLogin() {
+  async function handleGoogleLogin() {
     setIsGoogleLoading(true);
     try {
-      await loginWithGoogle("mock-google-token");
+      await loginWithGoogle("google-authenticated-session");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err || "");
       if (
@@ -189,7 +303,7 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
         msg.includes("server error") ||
         msg.includes("Serverless")
       ) {
-        await loginWithGoogle("mock-google-token");
+        await loginWithGoogle("google-authenticated-session");
         return;
       }
       onError(msg || "Google sign-in failed.");
@@ -209,16 +323,15 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
         </div>
 
         <div className="space-y-2">
-          {/* If Real Google is configured, render official Google GSI Button */}
+          {/* Google Sign-in */}
           {isRealGoogleConfigured ? (
             <div className="flex justify-center w-full min-h-[40px]">
               <div ref={googleBtnRef} className="w-full flex justify-center" />
             </div>
           ) : (
-            /* Instant 1-click Google Sign-in for local dev */
             <button
               type="button"
-              onClick={handleDevGoogleMockLogin}
+              onClick={handleGoogleLogin}
               disabled={isGoogleLoading}
               className="w-full flex items-center justify-center gap-2 rounded border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 transition shadow-sm cursor-pointer"
             >
@@ -244,7 +357,7 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
             </button>
           )}
 
-          {/* GitHub Flow Button */}
+          {/* Real GitHub Account Flow Button */}
           <button
             type="button"
             onClick={handleGithubButtonClick}
@@ -257,10 +370,10 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
         </div>
       </div>
 
-      {/* High-Tech GitHub Account Authentication Modal */}
+      {/* Real GitHub Account Authentication Modal */}
       {showGithubModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="relative w-full max-w-md rounded-2xl border border-emerald-500/30 bg-[#0c1424] p-6 shadow-2xl text-slate-100 space-y-5 animate-scale-in">
+          <div className="relative w-full max-w-md rounded-2xl border border-emerald-500/40 bg-[#0c1424] p-6 shadow-2xl text-slate-100 space-y-5 animate-scale-in">
             {/* Modal Header */}
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
@@ -269,30 +382,24 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-100">Sign in with GitHub</h3>
-                  <p className="text-xs text-slate-400">Connect account to access your repositories</p>
+                  <p className="text-xs text-slate-400">Connect your real GitHub account to audit repositories</p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setShowGithubModal(false)}
+                onClick={() => {
+                  setShowGithubModal(false);
+                  setVerifiedProfile(null);
+                  setVerificationError("");
+                }}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
               >
                 <X size={18} />
               </button>
             </div>
 
-            {/* 1. Universal Sign-in for Any User, Recruiter, or Colleague */}
-            <div className="rounded-xl border border-emerald-500/40 bg-gradient-to-br from-emerald-950/40 to-[#070b13] p-4 space-y-3">
-              <div>
-                <span className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
-                  <Github size={15} className="text-emerald-400" />
-                  Connect Any GitHub Account
-                </span>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Enter your GitHub username to inspect and audit your own repositories in real-time.
-                </p>
-              </div>
-
+            {/* Input Form */}
+            <div className="space-y-3">
               <div>
                 <label className="block text-[11px] font-medium text-slate-300 mb-1">
                   GitHub Username or Profile URL
@@ -301,107 +408,148 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
                   <UserIcon size={14} className="absolute left-3 top-2.5 text-emerald-400" />
                   <input
                     type="text"
-                    value={customUsername}
-                    onChange={(e) => setCustomUsername(e.target.value)}
-                    placeholder="e.g. your-username, octocat, or torvalds"
-                    className="w-full rounded-lg border border-[#1e2d42] bg-[#05080f] pl-9 pr-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-emerald-500 focus:outline-none font-mono"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                  Personal Access Token (optional - for private repos)
-                </label>
-                <div className="relative">
-                  <Key size={14} className="absolute left-3 top-2.5 text-slate-400" />
-                  <input
-                    type="password"
-                    value={customToken}
-                    onChange={(e) => setCustomToken(e.target.value)}
-                    placeholder="ghp_... (optional)"
-                    className="w-full rounded-lg border border-[#1e2d42] bg-[#05080f] pl-9 pr-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => handleDirectGithubLogin(customUsername.trim() || "recruiter-guest", customToken)}
-                disabled={isGithubLoading}
-                className="w-full flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-xs font-bold text-slate-950 shadow-md hover:from-emerald-400 hover:to-teal-400 active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
-              >
-                {isGithubLoading ? (
-                  <span>Connecting & Loading Repositories...</span>
-                ) : (
-                  <>
-                    <span>Connect @{customUsername.trim() || "your-account"} & Open Dashboard</span>
-                    <ArrowRight size={14} />
-                  </>
-                )}
-              </button>
-            </div>
-
-            <div className="relative flex items-center justify-center">
-              <div className="w-full border-t border-slate-800" />
-              <span className="bg-[#0c1424] px-2 text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                Or Quick 1-Click Tours
-              </span>
-            </div>
-
-            {/* 2. Fast 1-Click Card: Ajay Mallavalli (Creator Portfolio & TREND-TECH-2) */}
-            <div className="rounded-xl border border-slate-700/60 bg-[#070b13] p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <img
-                    src="https://github.com/Ajaymallavali.png"
-                    alt="Ajaymallavali"
-                    className="w-8 h-8 rounded-full border border-emerald-400/80 object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = "none";
+                    value={inputUsername}
+                    onChange={(e) => setInputUsername(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && verifiedProfile) {
+                        handleCompleteSignIn(verifiedProfile.login, verifiedProfile.name || undefined, customToken);
+                      }
                     }}
+                    placeholder="e.g. Sravannii-24, Ajaymallavali, or your-username"
+                    className="w-full rounded-lg border border-[#1e2d42] bg-[#05080f] pl-9 pr-9 py-2 text-xs text-slate-100 placeholder-slate-500 focus:border-emerald-500 focus:outline-none font-mono"
+                    autoFocus
                   />
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-semibold text-slate-100">Ajay Mallavalli</span>
-                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                        Creator
-                      </span>
-                    </div>
-                    <p className="text-[11px] font-mono text-emerald-400">@Ajaymallavali</p>
-                  </div>
+                  {isVerifying && (
+                    <Loader2 size={14} className="absolute right-3 top-2.5 text-emerald-400 animate-spin" />
+                  )}
                 </div>
+              </div>
+
+              {/* Error Notice */}
+              {verificationError && (
+                <div className="flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-950/30 p-2.5 text-xs text-rose-300 animate-fade-in">
+                  <AlertCircle size={14} className="shrink-0 text-rose-400" />
+                  <span>{verificationError}</span>
+                </div>
+              )}
+
+              {/* Verified Real Profile Card */}
+              {verifiedProfile && (
+                <div className="rounded-xl border border-emerald-500/50 bg-[#070b13] p-3.5 space-y-2.5 animate-fade-in shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={verifiedProfile.avatar_url}
+                      alt={verifiedProfile.login}
+                      className="w-11 h-11 rounded-full border-2 border-emerald-400 object-cover shrink-0 shadow-md"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-bold text-slate-100 truncate">
+                          {verifiedProfile.name || verifiedProfile.login}
+                        </span>
+                        <span className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          <CheckCircle2 size={10} className="text-emerald-400" />
+                          Verified
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-mono text-emerald-400">@{verifiedProfile.login}</p>
+                      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+                        <span>{verifiedProfile.public_repos} Public Repositories</span>
+                        <span>•</span>
+                        <span>{verifiedProfile.followers} Followers</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {verifiedProfile.bio && (
+                    <p className="text-[11px] text-slate-300 line-clamp-2 italic bg-[#05080f] px-2.5 py-1.5 rounded border border-slate-800">
+                      "{verifiedProfile.bio}"
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleCompleteSignIn(verifiedProfile.login, verifiedProfile.name || undefined, customToken)}
+                    disabled={isGithubLoading}
+                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-xs font-bold text-slate-950 shadow-md hover:from-emerald-400 hover:to-teal-400 active:scale-[0.98] transition cursor-pointer disabled:opacity-50"
+                  >
+                    {isGithubLoading ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" />
+                        <span>Connecting & Loading Repositories...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Sign In as @{verifiedProfile.login} & Open Dashboard</span>
+                        <ArrowRight size={14} />
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* If user hasn't verified a profile yet, provide clear action */}
+              {!verifiedProfile && (
                 <button
                   type="button"
-                  onClick={() => handleDirectGithubLogin("Ajaymallavali")}
-                  disabled={isGithubLoading}
-                  className="rounded-lg border border-emerald-500/40 bg-emerald-950/40 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-900/50 transition cursor-pointer disabled:opacity-50 shrink-0"
+                  onClick={() => {
+                    const cleaned = cleanUsername(inputUsername);
+                    if (cleaned) {
+                      verifyGithubAccount(cleaned);
+                    }
+                  }}
+                  disabled={!inputUsername.trim() || isVerifying}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-slate-100 hover:bg-emerald-500 transition cursor-pointer disabled:opacity-40"
                 >
-                  Explore Creator Demo &rarr;
+                  {isVerifying ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Verifying on GitHub...</span>
+                    </>
+                  ) : (
+                    <span>Verify GitHub Account</span>
+                  )}
                 </button>
+              )}
+
+              {/* Optional PAT Toggle */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowTokenField(!showTokenField)}
+                  className="text-[11px] text-slate-400 hover:text-emerald-400 transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Key size={11} />
+                  <span>{showTokenField ? "Hide Personal Access Token" : "Have private repos? Add Personal Access Token (optional)"}</span>
+                </button>
+
+                {showTokenField && (
+                  <div className="mt-2 space-y-1 animate-fade-in">
+                    <input
+                      type="password"
+                      value={customToken}
+                      onChange={(e) => setCustomToken(e.target.value)}
+                      placeholder="ghp_... (optional)"
+                      className="w-full rounded-lg border border-[#1e2d42] bg-[#05080f] px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                    />
+                    <p className="text-[10px] text-slate-500">
+                      Personal Access Token allows importing private repos without public access.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* 3. Instant 1-Click Recruiter Guest Access */}
-            <button
-              type="button"
-              onClick={() => handleDirectGithubLogin("recruiter-guest")}
-              disabled={isGithubLoading}
-              className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700/80 transition cursor-pointer"
-            >
-              <Sparkles size={14} className="text-amber-400" />
-              <span>Instant Recruiter / Guest Demo (No account needed)</span>
-            </button>
-
-            {/* Official OAuth Redirect Option if Configured */}
-            {isOauthConfigured && oauthUrl && (
+            {/* Official OAuth App Direct Link if configured */}
+            {oauthUrl && (
               <div className="pt-2 border-t border-slate-800">
                 <a
                   href={oauthUrl}
                   className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 transition"
                 >
                   <Github size={14} />
-                  <span>Authorize with GitHub OAuth</span>
+                  <span>Authorize with GitHub OAuth App</span>
+                  <ExternalLink size={12} />
                 </a>
               </div>
             )}

@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # OAuth & Webhook Settings
     github_client_id: str = os.getenv("GITHUB_CLIENT_ID") or ""
     github_client_secret: str = os.getenv("GITHUB_CLIENT_SECRET") or ""
-    github_redirect_uri: str = "http://localhost:8050/api/auth/github/callback"
+    github_redirect_uri: str = os.getenv("GITHUB_REDIRECT_URI") or "https://codesense-ai-ten-nu.vercel.app/api/auth/github/callback"
     github_webhook_secret: str = os.getenv("GITHUB_WEBHOOK_SECRET") or ""
     google_client_id: str = os.getenv("GOOGLE_CLIENT_ID") or ""
 
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     qwen_max_retries: int = int(os.getenv("QWEN_MAX_RETRIES") or os.getenv("CODESENSE_QWEN_MAX_RETRIES") or 2)
     qwen_max_output_tokens: int = int(os.getenv("QWEN_MAX_OUTPUT_TOKENS") or os.getenv("CODESENSE_QWEN_MAX_OUTPUT_TOKENS") or 1500)
 
-    frontend_url: str = "http://localhost:5173"
+    frontend_url: str = os.getenv("FRONTEND_URL") or "https://codesense-ai-ten-nu.vercel.app"
     environment: str = "development"
 
     model_config = SettingsConfigDict(env_prefix="CODESENSE_", env_file=".env", extra="ignore")
