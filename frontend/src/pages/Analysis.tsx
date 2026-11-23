@@ -278,6 +278,7 @@ export function AnalysisPage({
         branch: prReviewBranch.trim() || activeRepo.defaultBranch || "main",
         prTitle: prReviewTitle.trim() || `PR Review for ${activeRepo.name}`,
         diff: prReviewDiff.trim() || undefined,
+        repo: activeRepo,
       });
       setPrReviewData(data);
       setShowPrReviewModal(false);

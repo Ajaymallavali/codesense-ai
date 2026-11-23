@@ -160,7 +160,102 @@ function getAiDecisionForFinding(finding: Finding): AiDecisionDetail {
   const title = finding.title.toLowerCase();
   const category = finding.category.toLowerCase();
 
-  // 1. SQL Injection / Dynamic SQL Composition
+  // 1. Payment Webhook HMAC Signature Bypass
+  if (title.includes("webhook") || title.includes("hmac") || title.includes("signature")) {
+    return {
+      decisionTitle: "Enforce Cryptographic HMAC SHA256 Webhook Signature Verification",
+      failureExplanation: `Line ${line} in ${file} processes financial transaction webhooks without validating the cryptographic signature. An unauthenticated attacker can forge arbitrary webhook requests and trigger unauthorized order fulfillment or balance credits.`,
+      riskImpact: "Critical Authentication & Payment Integrity Failure (CWE-345 / OWASP A07). Allows malicious payload injection and fraudulent financial order processing.",
+      strategySteps: [
+        `Capture raw unparsed request payload buffer at line ${line}.`,
+        "Retrieve signing secret from secure environment configuration.",
+        "Calculate HMAC-SHA256 digest and compare using timing-safe comparison.",
+        "Reject requests with invalid or expired signatures with HTTP 400 immediately.",
+      ],
+      vulnerableSnippet: `// ❌ Line ${line} in ${file} - Webhook signature verification bypassed\napp.post("/webhook", (req, res) => {\n  const event = req.body; // Unverified payload\n  fulfillOrder(event.data);\n  res.json({ received: true });\n});`,
+      remediatedSnippet: `// ✅ Line ${line} in ${file} - Cryptographic HMAC SHA256 verification\napp.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {\n  const sig = req.headers["stripe-signature"];\n  const event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);\n  fulfillOrder(event.data);\n  res.json({ received: true });\n});`,
+      confidence: 99,
+      cwe: "CWE-345",
+      owasp: "A07:2021-Identification & Auth Failures",
+    };
+  }
+
+  // 2. CSRF Token Validation
+  if (title.includes("csrf") || title.includes("forgery")) {
+    return {
+      decisionTitle: "Enforce Anti-CSRF Synchronizer Token & SameSite Cookie Protection",
+      failureExplanation: `Line ${line} in ${file} handles form state submission without anti-CSRF token verification. A malicious third-party site can trick an authenticated browser into submitting unauthorized commands on behalf of the user.`,
+      riskImpact: "Cross-Site Request Forgery (CWE-352 / OWASP A01). Enables state-changing requests, profile modifications, or unwanted transactions without user consent.",
+      strategySteps: [
+        `Generate cryptographically random CSRF tokens tied to user sessions.`,
+        `Validate incoming X-CSRF-Token headers or form fields at line ${line}.`,
+        "Set SameSite=Strict / Lax attributes on all authentication cookies.",
+      ],
+      vulnerableSnippet: `// ❌ Line ${line} in ${file} - Missing anti-CSRF validation\nfetch("/api/contact", {\n  method: "POST",\n  body: JSON.stringify(formData)\n});`,
+      remediatedSnippet: `// ✅ Line ${line} in ${file} - Anti-CSRF token header enforcement\nconst csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');\nfetch("/api/contact", {\n  method: "POST",\n  headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken || "" },\n  body: JSON.stringify(formData)\n});`,
+      confidence: 97,
+      cwe: "CWE-352",
+      owasp: "A01:2021-Broken Access Control",
+    };
+  }
+
+  // 3. XSS / innerHTML DOM Injection
+  if (title.includes("xss") || title.includes("innerhtml") || title.includes("injection") && title.includes("scripting")) {
+    return {
+      decisionTitle: "Prevent DOM-Based XSS via textContent or DOMPurify Sanitization",
+      failureExplanation: `Line ${line} in ${file} assigns unescaped user-controlled input directly into innerHTML. Attackers can execute arbitrary JavaScript in the victim's session context, stealing session cookies and sensitive local data.`,
+      riskImpact: "Cross-Site Scripting (XSS) (CWE-79 / OWASP A03). Enables account takeover, session hijacking, and malicious content rendering.",
+      strategySteps: [
+        `Replace direct innerHTML assignment at line ${line} with textContent.`,
+        "If HTML formatting is required, sanitize markup using DOMPurify.sanitize().",
+        "Enforce strict Content Security Policy (CSP) headers.",
+      ],
+      vulnerableSnippet: `// ❌ Line ${line} in ${file} - Direct unescaped innerHTML assignment\ndocument.getElementById("result").innerHTML = userSearchQuery;`,
+      remediatedSnippet: `// ✅ Line ${line} in ${file} - Safe DOM manipulation with textContent\ndocument.getElementById("result").textContent = userSearchQuery;\n// Or: document.getElementById("result").innerHTML = DOMPurify.sanitize(userSearchQuery);`,
+      confidence: 98,
+      cwe: "CWE-79",
+      owasp: "A03:2021-Injection",
+    };
+  }
+
+  // 4. Web Storage Token Exposure
+  if (title.includes("web storage") || title.includes("localstorage") || title.includes("unencrypted")) {
+    return {
+      decisionTitle: "Migrate Sensitive Credentials from Web Storage to HttpOnly Secure Cookies",
+      failureExplanation: `Line ${line} in ${file} stores sensitive session or authentication tokens in unencrypted browser Web Storage (localStorage). Any cross-site scripting flaw can instantly exfiltrate this token to an attacker.`,
+      riskImpact: "Sensitive Data Exposure in Browser Storage (CWE-922 / OWASP A02). Allows complete session hijacking via client-side script execution.",
+      strategySteps: [
+        `Discontinue writing auth tokens into localStorage at line ${line}.`,
+        "Set authentication session cookies with HttpOnly, Secure, and SameSite=Strict flags.",
+        "Store only non-sensitive UI preferences in client-side Web Storage.",
+      ],
+      vulnerableSnippet: `// ❌ Line ${line} in ${file} - Plaintext auth token in localStorage\nlocalStorage.setItem("authToken", userAuthToken);`,
+      remediatedSnippet: `// ✅ Line ${line} in ${file} - HttpOnly Secure cookie session\n// Server sets: Set-Cookie: session_token=...; HttpOnly; Secure; SameSite=Strict\n// Client-side JavaScript cannot access or leak this token`,
+      confidence: 96,
+      cwe: "CWE-922",
+      owasp: "A02:2021-Cryptographic Failures",
+    };
+  }
+
+  // 5. Concurrency Race Condition / Atomic Update
+  if (title.includes("concurrency") || title.includes("race condition") || title.includes("decrement")) {
+    return {
+      decisionTitle: "Implement Atomic Conditional Database Operations to Prevent Race Conditions",
+      failureExplanation: `Line ${line} in ${file} performs a non-atomic read-modify-write cycle on inventory stock. Under concurrent requests, two transactions can read the same stock balance simultaneously, causing inventory over-selling and negative stock.`,
+      riskImpact: "Concurrency Race Condition (CWE-362). Corrupts business inventory data and permits duplicate stock allocations.",
+      strategySteps: [
+        `Replace separate SELECT and UPDATE queries at line ${line} with a single atomic conditional UPDATE.`,
+        "Enforce database constraints (CHECK (stock >= 0)) at the schema level.",
+        "Return immediate conflict status if atomic decrement affected zero rows.",
+      ],
+      vulnerableSnippet: `// ❌ Line ${line} in ${file} - Non-atomic read-modify-write cycle\nconst item = await db.items.findById(itemId);\nitem.stock -= quantity;\nawait item.save();`,
+      remediatedSnippet: `// ✅ Line ${line} in ${file} - Atomic conditional database decrement\nconst updated = await db.items.findOneAndUpdate(\n  { _id: itemId, stock: { $gte: quantity } },\n  { $inc: { stock: -quantity } },\n  { new: true }\n);\nif (!updated) throw new Error("Insufficient inventory stock");`,
+      confidence: 97,
+      cwe: "CWE-362",
+    };
+  }
+
+  // 6. SQL Injection / Dynamic SQL Composition
   if (title.includes("sql") || title.includes("query") || title.includes("statement")) {
     return {
       decisionTitle: "Enforce Parameterized Prepared Statements & Bind Query Sanitation",
