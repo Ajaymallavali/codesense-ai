@@ -73,7 +73,7 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
     googleClientId.includes(".apps.googleusercontent.com")
   );
 
-  const DEFAULT_GITHUB_CLIENT_ID = "Ov23liC0emya5wo1KHtO";
+  const DEFAULT_GITHUB_CLIENT_ID = "Ov23liCOemya5wo1KHtO";
   const githubClientId = import.meta.env.VITE_GITHUB_CLIENT_ID || DEFAULT_GITHUB_CLIENT_ID;
 
   // Check backend GitHub OAuth configuration status on mount

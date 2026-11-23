@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = _get_cors_origins()
 
     # OAuth & Webhook Settings
-    github_client_id: str = os.getenv("GITHUB_CLIENT_ID") or "Ov23liC0emya5wo1KHtO"
+    github_client_id: str = os.getenv("GITHUB_CLIENT_ID") or "Ov23liCOemya5wo1KHtO"
     github_client_secret: str = os.getenv("GITHUB_CLIENT_SECRET") or ""
     github_redirect_uri: str = os.getenv("GITHUB_REDIRECT_URI") or "https://codesense-ai-ten-nu.vercel.app/"
     github_webhook_secret: str = os.getenv("GITHUB_WEBHOOK_SECRET") or ""
