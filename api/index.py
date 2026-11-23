@@ -1,3 +1,4 @@
+import base64
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
 import json
@@ -7,6 +8,7 @@ from pathlib import Path
 import sys
 from typing import Any
 import urllib.parse
+import urllib.request
 
 # Set up paths so app modules are resolvable
 current_dir = Path(__file__).resolve().parent
@@ -321,7 +323,6 @@ class handler(BaseHTTPRequestHandler):
 
             repos = []
             try:
-                import urllib.request
                 gh_url = f"https://api.github.com/users/{urllib.parse.quote(clean_user)}/repos?per_page=100&sort=updated"
                 req = urllib.request.Request(
                     gh_url,
@@ -450,7 +451,6 @@ class handler(BaseHTTPRequestHandler):
             avatar_url = None
             if credential and "." in credential:
                 try:
-                    import base64
                     payload_part = credential.split(".")[1]
                     payload_part += "=" * ((4 - len(payload_part) % 4) % 4)
                     claims = json.loads(base64.urlsafe_b64decode(payload_part).decode("utf-8"))
@@ -508,7 +508,6 @@ class handler(BaseHTTPRequestHandler):
             access_token = None
             if client_secret and code:
                 try:
-                    import urllib.request
                     token_url = "https://github.com/login/oauth/access_token"
                     exchange_payload = json.dumps({
                         "client_id": client_id,
