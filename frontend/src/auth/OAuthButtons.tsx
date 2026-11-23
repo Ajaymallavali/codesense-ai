@@ -354,6 +354,17 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
             <Github size={16} />
             <span>{isGithubLoading ? "Connecting GitHub..." : "Continue with GitHub"}</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setShowGithubModal(true);
+              setVerificationError("");
+            }}
+            className="w-full text-center text-[11px] text-slate-400 hover:text-emerald-400 transition cursor-pointer pt-1"
+          >
+            Sign in as Any GitHub User / Recruiter (@username)
+          </button>
         </div>
       </div>
 

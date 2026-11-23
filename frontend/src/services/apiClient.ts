@@ -92,7 +92,7 @@ export async function request<T>(
       }
     }
 
-    if (res.status === 401) {
+    if (res.status === 401 && !endpoint.includes("/auth/")) {
       clearStoredToken();
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("codesense:unauthorized"));

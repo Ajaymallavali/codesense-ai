@@ -127,6 +127,7 @@ class handler(BaseHTTPRequestHandler):
 
         # Auth endpoints
         if path in ("/api/auth/me", "/auth/me"):
+            auth_header = self.headers.get("Authorization", "")
             self._send_json(200, {
                 "id": "00000000-0000-0000-0000-000000000001",
                 "email": "ajay@example.com",
@@ -137,7 +138,7 @@ class handler(BaseHTTPRequestHandler):
             return
 
         if path in ("/api/auth/github/oauth-url", "/auth/github/oauth-url", "/api/auth/github/url", "/auth/github/url"):
-            client_id = os.getenv("GITHUB_CLIENT_ID") or "Ov23liCOemya5wo1KHtO"
+            client_id = (os.getenv("GITHUB_CLIENT_ID") or "Ov23liCOemya5wo1KHtO").strip().strip("'\"")
             oauth_url = f"https://github.com/login/oauth/authorize?client_id={client_id}&scope=repo%20read:user%20user:email"
             self._send_json(200, {
                 "configured": True,
@@ -153,29 +154,46 @@ class handler(BaseHTTPRequestHandler):
 
         if path in ("/api/repositories/github", "/repositories/github"):
             username = query.get("username", ["Ajaymallavali"])[0]
-            if username.lower() == "ajaymallavali":
+            clean_user = username.strip().strip("@")
+            if not clean_user or clean_user.lower() == "developer":
+                clean_user = "Ajaymallavali"
+
+            repos = []
+            try:
+                import urllib.request
+                gh_url = f"https://api.github.com/users/{urllib.parse.quote(clean_user)}/repos?per_page=100&sort=updated"
+                req = urllib.request.Request(
+                    gh_url,
+                    headers={
+                        "Accept": "application/vnd.github+json",
+                        "User-Agent": "CodeSense-AI-Gateway",
+                    },
+                )
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    raw_data = json.loads(resp.read().decode("utf-8"))
+                    if isinstance(raw_data, list):
+                        for r in raw_data:
+                            repos.append({
+                                "id": r.get("id"),
+                                "name": r.get("name"),
+                                "fullName": r.get("full_name") or f"{clean_user}/{r.get('name')}",
+                                "language": r.get("language") or "Python",
+                                "defaultBranch": r.get("default_branch") or "main",
+                                "private": bool(r.get("private")),
+                                "description": r.get("description") or f"{r.get('name')} repository",
+                            })
+            except Exception as exc:
+                logger.warning("Could not fetch remote repos for %s: %s", clean_user, exc)
+
+            if repos:
+                self._send_json(200, repos)
+                return
+
+            if clean_user.lower() == "ajaymallavali":
                 self._send_json(200, FALLBACK_REPOS)
-            else:
-                self._send_json(200, [
-                    {
-                        "id": abs(hash(f"{username}-app")) % 1000000,
-                        "name": f"{username}-app",
-                        "fullName": f"{username}/{username}-app",
-                        "language": "TypeScript",
-                        "defaultBranch": "main",
-                        "private": False,
-                        "description": f"{username} application codebase",
-                    },
-                    {
-                        "id": abs(hash(f"{username}-core")) % 1000000,
-                        "name": f"{username}-core",
-                        "fullName": f"{username}/{username}-core",
-                        "language": "Python",
-                        "defaultBranch": "main",
-                        "private": False,
-                        "description": f"{username} core services",
-                    },
-                ])
+                return
+
+            self._send_json(200, [])
             return
 
         if path in ("/api/repositories/github/branches", "/repositories/github/branches"):
@@ -251,14 +269,34 @@ class handler(BaseHTTPRequestHandler):
 
         # Google Login
         if path in ("/api/auth/google", "/auth/google"):
+            credential = str(body.get("credential") or "")
+            email = "user@gmail.com"
+            display_name = "Google User"
+            avatar_url = None
+            if credential and "." in credential:
+                try:
+                    import base64
+                    payload_part = credential.split(".")[1]
+                    payload_part += "=" * ((4 - len(payload_part) % 4) % 4)
+                    claims = json.loads(base64.urlsafe_b64decode(payload_part).decode("utf-8"))
+                    email = claims.get("email") or email
+                    display_name = claims.get("name") or display_name
+                    avatar_url = claims.get("picture")
+                except Exception as exc:
+                    logger.warning("Could not parse Google ID token claims: %s", exc)
+
+            is_creator = "ajay" in email.lower() or "ajay" in display_name.lower()
+            github_username = "Ajaymallavali" if is_creator else display_name.replace(" ", "")
+
             self._send_json(200, {
                 "token": f"codesense_google_jwt_{int(datetime.now(timezone.utc).timestamp())}",
                 "tokenType": "Bearer",
                 "user": {
-                    "id": "google-user-uuid",
-                    "email": "developer@gmail.com",
-                    "displayName": "Google User",
-                    "githubUsername": "Ajaymallavali",
+                    "id": f"google-user-{abs(hash(email)) % 1000000}",
+                    "email": email,
+                    "displayName": display_name,
+                    "avatarUrl": avatar_url,
+                    "githubUsername": github_username,
                     "createdAt": datetime.now(timezone.utc).isoformat(),
                 },
             })
@@ -266,7 +304,9 @@ class handler(BaseHTTPRequestHandler):
 
         # GitHub Direct / Custom Login
         if path in ("/api/auth/github/direct", "/auth/github/direct", "/api/auth/github/login", "/auth/github/login"):
-            username = str(body.get("username") or "Ajaymallavali")
+            username = str(body.get("username") or "Ajaymallavali").strip().strip("@")
+            if not username or username.lower() == "developer":
+                username = "Ajaymallavali"
             disp_name = body.get("displayName") or (
                 "Ajay Mallavalli" if username.lower() == "ajaymallavali" else username
             )
@@ -286,11 +326,11 @@ class handler(BaseHTTPRequestHandler):
         # GitHub OAuth Code Exchange
         if path in ("/api/auth/github/exchange", "/auth/github/exchange"):
             code = str(body.get("code") or "")
-            client_id = os.getenv("GITHUB_CLIENT_ID", "Ov23liCOemya5wo1KHtO")
-            client_secret = os.getenv("GITHUB_CLIENT_SECRET", "")
-            redirect_uri = body.get("redirect_uri") or os.getenv("GITHUB_REDIRECT_URI", "https://codesense-ai-ten-nu.vercel.app/")
+            client_id = (os.getenv("GITHUB_CLIENT_ID") or "Ov23liCOemya5wo1KHtO").strip().strip("'\"")
+            client_secret = (os.getenv("GITHUB_CLIENT_SECRET") or "").strip().strip("'\"")
 
             gh_user = None
+            access_token = None
             if client_secret and code:
                 try:
                     import urllib.request
@@ -299,7 +339,6 @@ class handler(BaseHTTPRequestHandler):
                         "client_id": client_id,
                         "client_secret": client_secret,
                         "code": code,
-                        "redirect_uri": redirect_uri,
                     }).encode("utf-8")
                     req = urllib.request.Request(
                         token_url,
@@ -324,12 +363,44 @@ class handler(BaseHTTPRequestHandler):
                             )
                             with urllib.request.urlopen(user_req, timeout=10) as u_resp:
                                 gh_user = json.loads(u_resp.read().decode("utf-8"))
+
+                            if gh_user and not gh_user.get("email"):
+                                try:
+                                    em_req = urllib.request.Request(
+                                        "https://api.github.com/user/emails",
+                                        headers={
+                                            "Authorization": f"Bearer {access_token}",
+                                            "Accept": "application/vnd.github+json",
+                                            "User-Agent": "CodeSense-AI-Gateway",
+                                        },
+                                    )
+                                    with urllib.request.urlopen(em_req, timeout=5) as em_resp:
+                                        emails = json.loads(em_resp.read().decode("utf-8"))
+                                        if isinstance(emails, list):
+                                            for em in emails:
+                                                if em.get("primary") and em.get("verified"):
+                                                    gh_user["email"] = em.get("email")
+                                                    break
+                                            if not gh_user.get("email") and emails:
+                                                gh_user["email"] = emails[0].get("email")
+                                except Exception:
+                                    pass
                 except Exception as exc:
                     logger.warning("Standard library GitHub exchange attempt: %s", exc)
 
-            username = (gh_user.get("login") if gh_user else "developer") or "developer"
-            disp_name = (gh_user.get("name") if gh_user else username) or username
-            email = (gh_user.get("email") if gh_user else f"{username.lower()}@users.noreply.github.com") or f"{username.lower()}@users.noreply.github.com"
+            if gh_user:
+                username = gh_user.get("login") or "Ajaymallavali"
+                disp_name = gh_user.get("name") or (
+                    "Ajay Mallavalli" if username.lower() == "ajaymallavali" else username
+                )
+                email = gh_user.get("email") or f"{username.lower()}@users.noreply.github.com"
+                avatar_url = gh_user.get("avatar_url")
+            else:
+                username = "Ajaymallavali"
+                disp_name = "Ajay Mallavalli"
+                email = "ajay@example.com"
+                avatar_url = "https://avatars.githubusercontent.com/u/104273858"
+
             self._send_json(200, {
                 "token": f"codesense_github_jwt_{int(datetime.now(timezone.utc).timestamp())}",
                 "tokenType": "Bearer",
@@ -338,6 +409,8 @@ class handler(BaseHTTPRequestHandler):
                     "email": email,
                     "displayName": disp_name,
                     "githubUsername": username,
+                    "avatarUrl": avatar_url,
+                    "githubToken": access_token if access_token else None,
                     "createdAt": datetime.now(timezone.utc).isoformat(),
                 },
             })

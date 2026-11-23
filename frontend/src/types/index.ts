@@ -4,6 +4,7 @@ export type User = {
   id: string;
   email: string;
   displayName: string;
+  avatarUrl?: string | null;
   githubUsername?: string | null;
   githubToken?: string | null;
   createdAt: string;

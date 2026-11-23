@@ -3,15 +3,18 @@ import { RemoteRepository, Repository } from "../types";
 
 export function cleanGithubUsername(input?: string): string {
   if (!input) return "Ajaymallavali";
-  return (
-    input
-      .trim()
-      .replace(/^https?:\/\/github\.com\//i, "")
-      .replace(/^git@github\.com:/i, "")
-      .replace(/\.git$/i, "")
-      .split("/")[0]
-      .replace(/[^a-zA-Z0-9_-]/g, "") || "Ajaymallavali"
-  );
+  const cleaned = input
+    .trim()
+    .replace(/^https?:\/\/github\.com\//i, "")
+    .replace(/^git@github\.com:/i, "")
+    .replace(/\.git$/i, "")
+    .replace(/^@/, "")
+    .split("/")[0]
+    .replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!cleaned || cleaned.toLowerCase() === "developer") {
+    return "Ajaymallavali";
+  }
+  return cleaned;
 }
 
 export function cleanRepoFullName(input?: string): string {
@@ -188,18 +191,7 @@ export const githubApi = {
   async getRemoteRepositories(username?: string): Promise<RemoteRepository[]> {
     const cleanUser = cleanGithubUsername(username);
 
-    // 1. Try Backend API first
-    try {
-      const query = cleanUser ? `?username=${encodeURIComponent(cleanUser)}` : "";
-      const res = await request<RemoteRepository[]>(`/repositories/github${query}`);
-      if (Array.isArray(res) && res.length > 0) {
-        return res;
-      }
-    } catch (backendErr) {
-      console.warn("Backend /repositories/github returned error; querying GitHub Public API directly:", backendErr);
-    }
-
-    // 2. Direct client-side GitHub REST API fetch (works on all devices and user accounts globally)
+    // 1. Direct client-side GitHub REST API fetch (instant live repos for ANY account globally)
     try {
       const ghRes = await fetch(`https://api.github.com/users/${encodeURIComponent(cleanUser)}/repos?per_page=100&sort=updated`, {
         headers: {
@@ -222,6 +214,17 @@ export const githubApi = {
       }
     } catch (ghErr) {
       console.warn("Direct GitHub API fetch error:", ghErr);
+    }
+
+    // 2. Try Backend API as fallback
+    try {
+      const query = cleanUser ? `?username=${encodeURIComponent(cleanUser)}` : "";
+      const res = await request<RemoteRepository[]>(`/repositories/github${query}`);
+      if (Array.isArray(res) && res.length > 0) {
+        return res;
+      }
+    } catch (backendErr) {
+      console.warn("Backend /repositories/github returned error:", backendErr);
     }
 
     // 3. Fallback: return personalized list so the UI NEVER breaks with 404

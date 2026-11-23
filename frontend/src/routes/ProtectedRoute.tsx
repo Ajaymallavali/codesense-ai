@@ -17,8 +17,8 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader message="Loading CodeSense session..." size="lg" />
+      <div className="min-h-screen flex items-center justify-center bg-[#05080f] text-slate-100">
+        <Loader message="Authenticating session & loading repositories..." size="lg" />
       </div>
     );
   }

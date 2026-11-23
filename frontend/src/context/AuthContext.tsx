@@ -54,10 +54,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               token: `gh_session_${Date.now()}`,
               tokenType: "Bearer",
               user: {
-                id: `gh-user-${Date.now()}`,
-                displayName: "GitHub Developer",
-                email: "developer@github.com",
-                githubUsername: "developer",
+                id: "00000000-0000-0000-0000-000000000001",
+                displayName: "Ajay Mallavalli",
+                email: "ajay@example.com",
+                githubUsername: "Ajaymallavali",
                 createdAt: new Date().toISOString(),
               },
             };
@@ -113,6 +113,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const parsed: AuthResponse = JSON.parse(raw);
         if (parsed && parsed.user && typeof parsed.user === "object" && parsed.user.displayName && parsed.token) {
+          if (
+            parsed.user.githubUsername === "developer" ||
+            parsed.user.displayName === "GitHub Developer" ||
+            parsed.user.email === "developer@github.com"
+          ) {
+            parsed.user.githubUsername = "Ajaymallavali";
+            parsed.user.displayName = "Ajay Mallavalli";
+            parsed.user.email = "ajay@example.com";
+            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(parsed));
+          }
           setUser(parsed.user);
           setToken(parsed.token);
         } else {
@@ -224,15 +234,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err: any) {
       if (isServerUnavailableOrFailed(err)) {
         console.warn("Backend API not reachable. Launching Google resilient session.", err);
+        let gEmail = "ajaymallavali02@gmail.com";
+        let gName = "Ajay Mallavalli";
+        let gPic: string | undefined = undefined;
+        try {
+          if (credential && credential.includes(".")) {
+            const rawPayload = credential.split(".")[1];
+            const padded = rawPayload + "=".repeat((4 - (rawPayload.length % 4)) % 4);
+            const claims = JSON.parse(atob(padded.replace(/-/g, "+").replace(/_/g, "/")));
+            if (claims.email) gEmail = claims.email;
+            if (claims.name) gName = claims.name;
+            if (claims.picture) gPic = claims.picture;
+          }
+        } catch {}
+        const isAjay = gEmail.toLowerCase().includes("ajay") || gName.toLowerCase().includes("ajay");
         const fallbackAuth: AuthResponse = {
           token: "codesense_google_session_" + Date.now(),
           tokenType: "Bearer",
           user: {
-            ...DEFAULT_DEMO_USER,
             id: "google-user-" + Date.now(),
-            displayName: "Google User",
-            email: "developer@gmail.com",
-            githubUsername: "Ajaymallavali",
+            displayName: gName,
+            email: gEmail,
+            avatarUrl: gPic,
+            githubUsername: isAjay ? "Ajaymallavali" : gName.replace(/[^a-zA-Z0-9_-]/g, ""),
+            createdAt: new Date().toISOString(),
           },
         };
         handleAuthSuccess(fallbackAuth);
