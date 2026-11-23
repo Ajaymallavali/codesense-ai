@@ -398,7 +398,14 @@ The formal **4-page PDF report** covers the Executive Snapshot, Category Issue P
         .slice(-6)
         .map((m) => ({ role: m.role, content: m.text }));
 
-      const data = await aiApi.chat(activeRepo?.id, query, conversationId, historyTurns);
+      const data = await aiApi.chat(
+        activeRepo?.id,
+        query,
+        conversationId,
+        historyTurns,
+        activeRepo,
+        safeFindings
+      );
       const newConvId = data.conversationId || conversationId;
       if (data.provider) {
         setActiveProvider(data.provider);
@@ -438,7 +445,14 @@ The formal **4-page PDF report** covers the Executive Snapshot, Category Issue P
         .slice(-6)
         .map((m) => ({ role: m.role, content: m.text }));
 
-      const data = await aiApi.chat(activeRepo?.id, query, conversationId, historyTurns);
+      const data = await aiApi.chat(
+        activeRepo?.id,
+        query,
+        conversationId,
+        historyTurns,
+        activeRepo,
+        safeFindings
+      );
       const newConvId = data.conversationId || conversationId;
       if (data.provider) {
         setActiveProvider(data.provider);
@@ -454,7 +468,7 @@ The formal **4-page PDF report** covers the Executive Snapshot, Category Issue P
       persistTurn(withAssistant, newConvId);
     } catch (err) {
       try {
-        const data = await aiApi.explain(findingId);
+        const data = await aiApi.explain(findingId, undefined, activeRepo);
         const reply = `${data.explanation}\n\n${data.suggestion ? `Suggested fix:\n${data.suggestion}` : ""}`;
         const withAssistant: ChatMessage[] = [...withUser, { role: "assistant", text: reply }];
         persistTurn(withAssistant, conversationId);
