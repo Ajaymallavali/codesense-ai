@@ -388,10 +388,11 @@ class handler(BaseHTTPRequestHandler):
             return
 
         if "/findings" in path:
-            path_str = path.lower()
-            if "22222222" in path_str or "raghuram" in path_str or "portfolio" in path_str:
+            repo_id = query.get("repositoryId", [""])[0]
+            check_str = f"{repo_id} {path}".lower()
+            if "22222222" in check_str or "raghuram" in check_str or "portfolio" in check_str:
                 self._send_json(200, RAGHURAM_PORTFOLIO_FINDINGS)
-            elif "33333333" in path_str or "codesense" in path_str:
+            elif "33333333" in check_str or "codesense" in check_str:
                 self._send_json(200, CODESENSE_AI_FINDINGS)
             else:
                 self._send_json(200, TREND_TECH_FINDINGS)
