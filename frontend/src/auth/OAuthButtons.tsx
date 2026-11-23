@@ -241,22 +241,8 @@ export function OAuthButtons({ mode, onError }: OAuthButtonsProps) {
 
   // Click on "Continue with GitHub" button
   function handleGithubButtonClick() {
-    // 1. If backend has an official OAuth authorization URL, redirect directly
-    if (oauthUrl) {
-      window.location.href = oauthUrl;
-      return;
-    }
-
-    // 2. If frontend has a configured GitHub Client ID, redirect directly to GitHub
-    if (githubClientId && githubClientId.trim() !== "") {
-      const redirectUri = encodeURIComponent(`${window.location.origin}/`);
-      window.location.href = `https://github.com/login/oauth/authorize?client_id=${githubClientId}&redirect_uri=${redirectUri}&scope=read:user,user:email,repo`;
-      return;
-    }
-
-    // 3. Otherwise, open the Real Account Verification modal
-    setShowGithubModal(true);
-    setVerificationError("");
+    const clientId = githubClientId || DEFAULT_GITHUB_CLIENT_ID;
+    window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=read:user%20user:email%20repo`;
   }
 
   // Sign in with verified real GitHub account

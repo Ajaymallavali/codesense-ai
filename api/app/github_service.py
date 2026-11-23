@@ -39,7 +39,6 @@ class GitHubService:
 
         params = {
             "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
             "scope": "repo,read:user,user:email",
         }
         if state:

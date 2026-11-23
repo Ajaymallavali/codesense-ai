@@ -138,8 +138,7 @@ class handler(BaseHTTPRequestHandler):
 
         if path in ("/api/auth/github/oauth-url", "/auth/github/oauth-url", "/api/auth/github/url", "/auth/github/url"):
             client_id = os.getenv("GITHUB_CLIENT_ID") or "Ov23liCOemya5wo1KHtO"
-            redirect_uri = os.getenv("GITHUB_REDIRECT_URI", "https://codesense-ai-ten-nu.vercel.app/")
-            oauth_url = f"https://github.com/login/oauth/authorize?client_id={client_id}&redirect_uri={urllib.parse.quote(redirect_uri)}&scope=repo%20read:user%20user:email"
+            oauth_url = f"https://github.com/login/oauth/authorize?client_id={client_id}&scope=repo%20read:user%20user:email"
             self._send_json(200, {
                 "configured": True,
                 "url": oauth_url,
@@ -475,8 +474,7 @@ except Exception as exc:
         @app.get("/api/auth/github/url")
         def api_gh_url():
             client_id = os.getenv("GITHUB_CLIENT_ID") or "Ov23liCOemya5wo1KHtO"
-            redirect_uri = os.getenv("GITHUB_REDIRECT_URI", "https://codesense-ai-ten-nu.vercel.app/")
-            oauth_url = f"https://github.com/login/oauth/authorize?client_id={client_id}&redirect_uri={urllib.parse.quote(redirect_uri)}&scope=repo%20read:user%20user:email"
+            oauth_url = f"https://github.com/login/oauth/authorize?client_id={client_id}&scope=repo%20read:user%20user:email"
             return {
                 "configured": True,
                 "url": oauth_url,
