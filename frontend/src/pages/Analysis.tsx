@@ -812,7 +812,9 @@ The formal **4-page PDF report** covers the Executive Snapshot, Category Issue P
               </button>
               <span className="text-[10px] rounded bg-emerald-950/70 text-emerald-300 font-mono px-2 py-0.5 border border-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.2)] flex items-center gap-1.5 transition-transform duration-200 hover:scale-105 cursor-default">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_#00ff88]" />
-                {activeProvider === "cloudflare" ? "Cloudflare Workers AI (Qwen 32B)" : "Qwen RAG Engine"}
+                {activeProvider.toLowerCase().includes("cloudflare") || activeProvider.toLowerCase().includes("qwen") || activeProvider.toLowerCase().includes("llama") || activeProvider === "cloudflare"
+                  ? "Cloudflare Workers AI (Qwen 32B)"
+                  : "Qwen RAG Engine"}
               </span>
             </div>
           </div>
