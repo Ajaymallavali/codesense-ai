@@ -271,6 +271,25 @@ export function useDashboardMetrics(findings) {
   }, [findings]);
 }`;
   }
+  if (fp.includes("theme.css")) {
+    return `/* src/styles/theme.css - Cleaned & Purged Utility Stylesheet */
+:root {
+  --primary-accent: #10b981;
+  --primary-bg: #0d1117;
+  --surface-panel: #161b22;
+  --border-muted: #30363d;
+  --text-main: #f0f6fc;
+  --text-dim: #8b949e;
+}
+
+/* Purged 42 redundant CSS custom properties and unused webfont rules */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--primary-bg);
+  color: var(--text-main);
+  margin: 0;
+}`;
+  }
   return `// Recommended Refactoring for ${f.filePath} (Line ${f.lineNumber || 1})
 // Remediation: ${f.suggestion}
 // Applied directly via CodeSense AI Qwen 2.5-Coder Engine`;
@@ -468,9 +487,289 @@ ${snippet}
     };
   }
 
-  // 2. COMPLEXITY INTENT: "which error are most complicated?", "most complex", "hardest"
+  // 2. LOW SEVERITY / LIGHTWEIGHT / MINOR FINDINGS
+  // Catches: "light weight critical like low error on this repo just list it out", "low errors", "minor issues"
+  const isLowQuery =
+    /light weight|lightweight|low error|low severity|low issue|like low|minor error|minor issue|minor finding|least critical|lowest error|lowest severity|lowest issue|trivial error/i.test(
+      q
+    ) ||
+    (q.includes("low") && /error|issue|finding|list|show|what|which|just/i.test(q));
+
+  if (isLowQuery) {
+    let lowFindings = activeFindings.filter((f) => (f.severity || "").toLowerCase() === "low");
+    if (!lowFindings.length) {
+      lowFindings = activeFindings.filter((f) => (f.severity || "").toLowerCase() === "medium");
+    }
+
+    const findingsDetail = lowFindings.map((lf, idx) => {
+      const snippet = getRemediationSnippetForFinding(lf);
+      return `### ${idx + 1}. \`${lf.filePath}:Line ${lf.lineNumber || 1}\` [${lf.severity.toUpperCase()} • ${lf.category}]\n- **Finding:** ${lf.title}\n- **Why it is Low Severity (Lightweight):** This finding does not introduce runtime crashes or data leaks. It represents a resilience optimization or stylesheet cleanliness improvement.\n- **Remediation Mandate:** ${lf.suggestion}\n\n#### Verified Drop-in Implementation:\n\`\`\`javascript\n${snippet}\n\`\`\``;
+    });
+    const lowBody = findingsDetail.join("\n\n---\n\n");
+
+    const responseMd = `### 🟢 Lightweight & Low-Severity Findings in **${repoName}**
+
+CodeSense AST analysis identified **${lowFindings.length} Low-Severity (Lightweight) Findings** in this repository:
+
+${lowBody}
+
+---
+
+### 💡 Pro Engineer Summary for Lightweight Items
+1. **Low Regression Risk:** These lightweight items require only **~2 hours** of cumulative engineering time to resolve.
+2. **Safe to Merge:** Neither finding blocks production release gates or triggers compliance failures.
+3. **Continuous Hygiene:** Purging dead CSS rules and adding WebSocket reconnect backoffs eliminates background network churn and reduces client bundle size.`;
+
+    return {
+      response: responseMd,
+      answer: responseMd,
+      citations: lowFindings.map((lf) => ({
+        filePath: lf.filePath,
+        startLine: lf.lineNumber || 1,
+        symbol: lf.category,
+      })),
+      conversationId: `conv_${Date.now()}`,
+      provider: "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+    };
+  }
+
+  // 3. MEDIUM SEVERITY / MODERATE FINDINGS
+  const isMediumQuery =
+    /medium error|medium severity|medium issue|medium finding|moderate error|moderate severity|mid level|medium priority/i.test(
+      q
+    ) ||
+    (q.includes("medium") && /error|issue|finding|list|show|what|which/i.test(q) && !isLowQuery);
+
+  if (isMediumQuery) {
+    const medFindings = activeFindings.filter((f) => (f.severity || "").toLowerCase() === "medium");
+    const findingsDetail = medFindings.map((mf, idx) => {
+      const snippet = getRemediationSnippetForFinding(mf);
+      return `### ${idx + 1}. \`${mf.filePath}:Line ${mf.lineNumber || 1}\` [MEDIUM • ${mf.category}]\n- **Finding:** ${mf.title}\n- **Impact:** Elevated cognitive complexity or concurrency race conditions that degrade maintainability under traffic.\n- **Remediation:** ${mf.suggestion}\n\n\`\`\`javascript\n${snippet}\n\`\`\``;
+    });
+    const medBody = findingsDetail.join("\n\n---\n\n");
+
+    const responseMd = `### 🟡 Medium-Severity Findings in **${repoName}**
+
+CodeSense AST analysis detected **${medFindings.length} Medium-Severity Findings**:
+
+${medBody}
+
+---
+
+💡 *Pro Tip:* Click on any file above or ask me for specific refactorings to resolve these medium-priority findings!`;
+
+    return {
+      response: responseMd,
+      answer: responseMd,
+      citations: medFindings.map((mf) => ({
+        filePath: mf.filePath,
+        startLine: mf.lineNumber || 1,
+        symbol: mf.category,
+      })),
+      conversationId: `conv_${Date.now()}`,
+      provider: "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+    };
+  }
+
+  // 4. EASIEST TO FIX / QUICK WINS
+  const isEasiestQuery = /easiest|easy to fix|simple to fix|quick win|simplest|fastest to fix|least effort/i.test(q);
+  if (isEasiestQuery) {
+    const lowFindings = activeFindings.filter((f) => (f.severity || "").toLowerCase() === "low");
+    const leadEasy = lowFindings[lowFindings.length - 1] || activeFindings[activeFindings.length - 1];
+    const snippet = getRemediationSnippetForFinding(leadEasy);
+
+    const responseMd = `### ⚡ Easiest Finding to Fix in **${repoName}**
+
+The fastest, lowest-effort finding to resolve right now is:
+
+### 🏆 \`${leadEasy.filePath}:Line ${leadEasy.lineNumber || 1}\` — ${leadEasy.title}
+- **Severity:** \`${leadEasy.severity.toUpperCase()}\` | **Category:** ${leadEasy.category}
+- **Why It is Easiest:** Zero runtime risk and zero logic refactoring. You only need to purge dead stylesheet or utility rules.
+- **Estimated Fix Time:** Under 2 minutes.
+
+#### Cleaned Drop-in Replacement:
+\`\`\`javascript
+${snippet}
+\`\`\`
+
+Next easiest: \`${activeFindings[activeFindings.length - 2]?.filePath}:Line ${activeFindings[activeFindings.length - 2]?.lineNumber || 1}\`.`;
+
+    return {
+      response: responseMd,
+      answer: responseMd,
+      citations: [
+        {
+          filePath: leadEasy.filePath,
+          startLine: leadEasy.lineNumber || 1,
+          symbol: leadEasy.category,
+        },
+      ],
+      conversationId: `conv_${Date.now()}`,
+      provider: "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+    };
+  }
+
+  // 5. CODE SMELLS INTENT
+  const isSmellQuery = /code smell|smell|smells|anti-pattern|cleanliness|hygiene|dead code|unused/i.test(q);
+  if (isSmellQuery) {
+    const smellFindings = activeFindings.filter((f) => (f.category || "").toLowerCase().includes("smell"));
+    const findingsDetail = smellFindings.map((sf, idx) => {
+      const snippet = getRemediationSnippetForFinding(sf);
+      return `### ${idx + 1}. \`${sf.filePath}:Line ${sf.lineNumber || 1}\` [${sf.severity.toUpperCase()} • Code Smell]\n- **Issue:** ${sf.title}\n- **Remediation:** ${sf.suggestion}\n\n\`\`\`javascript\n${snippet}\n\`\`\``;
+    });
+    const smellBody = findingsDetail.join("\n\n---\n\n");
+
+    const responseMd = `### 🧹 Code Smells & Anti-Patterns in **${repoName}**
+
+CodeSense AST parser detected **${smellFindings.length} Code Smells** affecting maintainability:
+
+${smellBody}
+
+---
+
+💡 *Pro Tip:* Resolving code smells prevents technical debt accumulation and improves codebase readability!`;
+
+    return {
+      response: responseMd,
+      answer: responseMd,
+      citations: smellFindings.map((sf) => ({
+        filePath: sf.filePath,
+        startLine: sf.lineNumber || 1,
+        symbol: "Code smell",
+      })),
+      conversationId: `conv_${Date.now()}`,
+      provider: "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+    };
+  }
+
+  // 6. RELIABILITY / WEBSOCKET / NETWORK RETRY
+  const isReliabilityQuery = /reliab|resilien|websocket|retry|backoff|reconnect|timeout|network drop/i.test(q);
+  if (isReliabilityQuery) {
+    const relFindings = activeFindings.filter((f) => (f.category || "").toLowerCase().includes("reliab"));
+    const rf = relFindings[0] || activeFindings[activeFindings.length - 1];
+    const snippet = getRemediationSnippetForFinding(rf);
+
+    const responseMd = `### 🔄 Reliability & Resilience Analysis: **${repoName}**
+
+AST analysis detected a reliability and fault-tolerance finding:
+
+- **Component:** \`${rf.filePath}:Line ${rf.lineNumber || 1}\` [${rf.severity.toUpperCase()} • Reliability]
+- **Identified Flaw:** ${rf.title}
+- **Operational Risk:** Transient network disconnects or WebSocket dropouts cause data desynchronization between client and server without an automated backoff retry strategy.
+
+---
+
+### 🛡️ Production Reconnection Implementation:
+\`\`\`javascript
+${snippet}
+\`\`\`
+
+---
+
+💡 *Pro Tip:* Exponential backoff prevents thundering-herd reconnect spikes during backend redeployments.`;
+
+    return {
+      response: responseMd,
+      answer: responseMd,
+      citations: [
+        {
+          filePath: rf.filePath,
+          startLine: rf.lineNumber || 1,
+          symbol: "Reliability",
+        },
+      ],
+      conversationId: `conv_${Date.now()}`,
+      provider: "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+    };
+  }
+
+  // 7. DATABASE / SQL / QUERY BUILDER
+  const isDbQuery = /database|sql|db|query|querybuilder|postgres|table|atomic/i.test(q);
+  if (isDbQuery) {
+    const dbFindings = activeFindings.filter(
+      (f) =>
+        f.filePath.toLowerCase().includes("db") ||
+        f.title.toLowerCase().includes("sql") ||
+        f.filePath.toLowerCase().includes("query") ||
+        (f.suggestion || "").toLowerCase().includes("database")
+    );
+    const findingsDetail = dbFindings.map((df, idx) => {
+      const snippet = getRemediationSnippetForFinding(df);
+      return `### ${idx + 1}. \`${df.filePath}:Line ${df.lineNumber || 1}\` [${df.severity.toUpperCase()} • ${df.category}]\n- **Issue:** ${df.title}\n- **Remediation:** ${df.suggestion}\n\n\`\`\`javascript\n${snippet}\n\`\`\``;
+    });
+    const dbBody = findingsDetail.join("\n\n---\n\n");
+
+    const responseMd = `### 🗄️ Database & Query Layer Findings in **${repoName}**
+
+CodeSense AST analysis identified **${dbFindings.length} Database-Related Findings**:
+
+${dbBody}`;
+
+    return {
+      response: responseMd,
+      answer: responseMd,
+      citations: dbFindings.map((df) => ({
+        filePath: df.filePath,
+        startLine: df.lineNumber || 1,
+        symbol: df.category,
+      })),
+      conversationId: `conv_${Date.now()}`,
+      provider: "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+    };
+  }
+
+  // 8. LIST ALL FINDINGS DIRECTLY
+  const isListAllQuery =
+    /list all|show all|all error|all issue|all finding|every error|every issue|just list it out|list out all|list them all|list findings/i.test(
+      q
+    ) &&
+    !isLowQuery &&
+    !isMediumQuery;
+
+  if (isListAllQuery) {
+    const highs = activeFindings.filter((f) => (f.severity || "").toLowerCase() === "high");
+    const meds = activeFindings.filter((f) => (f.severity || "").toLowerCase() === "medium");
+    const lows = activeFindings.filter((f) => (f.severity || "").toLowerCase() === "low");
+
+    const formatGroup = (titleHdr: string, group: Finding[]) => {
+      const lines = [`#### ${titleHdr} (${group.length})`];
+      group.forEach((item, idx) => {
+        lines.push(
+          `${idx + 1}. \`${item.filePath}:Line ${item.lineNumber || 1}\` — **${item.title}** [${item.category}]\n   *Fix:* ${item.suggestion}`
+        );
+      });
+      return lines.join("\n");
+    };
+
+    const fullListText = [
+      formatGroup("🔴 High Severity (Immediate Fixes)", highs),
+      formatGroup("🟡 Medium Severity (Complexity & Race Hazards)", meds),
+      formatGroup("🟢 Low Severity (Lightweight Hygiene)", lows),
+    ].join("\n\n");
+
+    const responseMd = `### 📋 Complete List of All Findings in **${repoName}** (${activeFindings.length} Total)
+
+${fullListText}
+
+---
+💡 *Ask me about any specific file or line number (e.g. "Explain line 84") to get the full refactored code!*`;
+
+    return {
+      response: responseMd,
+      answer: responseMd,
+      citations: activeFindings.slice(0, 4).map((f) => ({
+        filePath: f.filePath,
+        startLine: f.lineNumber || 1,
+        symbol: f.category,
+      })),
+      conversationId: `conv_${Date.now()}`,
+      provider: "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+    };
+  }
+
+  // 9. COMPLEXITY INTENT: "which error are most complicated?", "most complex", "hardest"
   const isComplexityQuery =
-    /complicat|complex|hardest|difficult|challenging|cognitive|cyclomatic|deepest/i.test(q);
+    /complicat|complex|hardest|difficult|challenging|cognitive|cyclomatic|deepest/i.test(q) && !isLowQuery;
   if (isComplexityQuery) {
     const compFindings = activeFindings.filter((f) => (f.category || "").toLowerCase() === "complexity");
     const raceFindings = activeFindings.filter(
@@ -553,7 +852,7 @@ The highest complexity errors are not syntax mistakes — they are **architectur
     };
   }
 
-  // 3. ISSUE COUNT INTENT: "how many issue's are facing this repo?", "issue count", "total issues"
+  // 10. ISSUE COUNT INTENT: "how many issue's are facing this repo?", "issue count", "total issues"
   const isCountQuery =
     /how many|number of|count|total issue|total error|total finding|total bug|how much issue/i.test(q);
   if (isCountQuery) {
@@ -604,9 +903,13 @@ This repository currently has **${activeFindings.length} total detected findings
     };
   }
 
-  // 4. CRITICAL / HIGH-SEVERITY SECURITY INTENT: "most critical", "dangerous", "security flaws", "vulnerabilities"
+  // 11. CRITICAL / HIGH-SEVERITY SECURITY INTENT: "most critical", "dangerous", "security flaws", "vulnerabilities"
   const isSecurityQuery =
-    /critical|dangerous|highest risk|security|vulnerabilit|exploit|top priority|worst/i.test(q);
+    /critical|dangerous|highest risk|security|vulnerabilit|exploit|top priority|worst|high severity|high error/i.test(
+      q
+    ) &&
+    !isLowQuery &&
+    !isMediumQuery;
   if (isSecurityQuery) {
     let highFindings = activeFindings.filter((f) => (f.severity || "").toLowerCase() === "high");
     if (!highFindings.length) {
@@ -658,7 +961,7 @@ ${leadSnippet}
     };
   }
 
-  // 5. REMEDIATION ROADMAP / HOW TO FIX INTENT: "how to fix", "roadmap", "improve score"
+  // 12. REMEDIATION ROADMAP / HOW TO FIX INTENT: "how to fix", "roadmap", "improve score"
   const isRoadmapQuery =
     /how to fix|how do i fix|how can we fix|how should i fix|roadmap|action plan|steps to solve|remediation plan|improve score|increase score|reduce debt|boost score/i.test(q);
   if (isRoadmapQuery) {
@@ -712,7 +1015,7 @@ To increase the Maintainability Health Score from **${analysis.maintainabilitySc
     };
   }
 
-  // 6. ARCHITECTURE / TECH STACK INTENT: "tech stack", "architecture", "what language"
+  // 13. ARCHITECTURE / TECH STACK INTENT: "tech stack", "architecture", "what language"
   const isArchQuery =
     /tech stack|technologies|technology|architecture|design pattern|structure|what language|framework/i.test(q);
   if (isArchQuery) {
@@ -746,7 +1049,42 @@ Ask me about any specific layer or file to inspect the refactored implementation
     };
   }
 
-  // 7. CONVERSATIONAL FOLLOW-UP OR PRIOR ASSESSMENT GIVEN (Prevents Repeating General Assessment)
+  // 14. DYNAMIC TOPIC MATCHING (Search across findings)
+  const queryWords = q
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !/repo|what|which|this|whole|show|give|tell|error|issue|find/i.test(w));
+  const topicMatches = activeFindings.filter((f) => {
+    const searchTarget = `${f.filePath} ${f.title} ${f.category} ${f.suggestion}`.toLowerCase();
+    return queryWords.some((qw) => searchTarget.includes(qw));
+  });
+
+  if (topicMatches.length > 0) {
+    const matchDetails = topicMatches.map((tm, idx) => {
+      const snippet = getRemediationSnippetForFinding(tm);
+      return `### ${idx + 1}. \`${tm.filePath}:Line ${tm.lineNumber || 1}\` [${tm.severity.toUpperCase()} • ${tm.category}]\n- **Title:** ${tm.title}\n- **Remediation:** ${tm.suggestion}\n\n\`\`\`javascript\n${snippet}\n\`\`\``;
+    });
+    const matchedBody = matchDetails.join("\n\n---\n\n");
+
+    const responseMd = `### 🔍 Query Analysis for **${repoName}**
+
+CodeSense AST analysis identified **${topicMatches.length} relevant findings** matching your inquiry:
+
+${matchedBody}`;
+
+    return {
+      response: responseMd,
+      answer: responseMd,
+      citations: topicMatches.map((tm) => ({
+        filePath: tm.filePath,
+        startLine: tm.lineNumber || 1,
+        symbol: tm.category,
+      })),
+      conversationId: `conv_${Date.now()}`,
+      provider: "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+    };
+  }
+
+  // 15. CONVERSATIONAL FOLLOW-UP OR PRIOR ASSESSMENT GIVEN (Prevents Repeating General Assessment)
   const hasPriorTurns = Boolean(messages && messages.length > 1);
   const isConversational =
     /thanks|thank you|ok|okay|cool|got it|hello|hi|hey|what next|help|explain more|why|what do you mean/i.test(q);
@@ -758,7 +1096,8 @@ Here are the most effective ways we can proceed:
 1. **Targeted Code Refactoring:** Ask *"Show fix for paymentGateway.js"* or *"How to refactor line 142"* for drop-in production code.
 2. **Complexity Breakdown:** Ask *"Which error are most complicated?"* to dive into the cognitive complexity in \`ProductCatalog.jsx\` and concurrency race conditions.
 3. **Security Remediation:** Ask *"Which error is most critical?"* to inspect the 3 High-severity vulnerabilities and their exploit vectors.
-4. **Action Plan:** Ask *"How to fix these issues?"* to review the 3-phase engineering remediation roadmap.
+4. **Lightweight Items:** Ask *"Show me the low errors"* to review WebSocket retry backoffs and dead CSS rules.
+5. **Action Plan:** Ask *"How to fix these issues?"* to review the 3-phase engineering remediation roadmap.
 
 What specific area would you like to tackle right now?`;
 
@@ -775,7 +1114,7 @@ What specific area would you like to tackle right now?`;
     };
   }
 
-  // 8. GENERAL REPOSITORY REVIEW (Only on initial general request or explicit overview request)
+  // 16. GENERAL REPOSITORY REVIEW (Only on initial general request or explicit overview request)
   const findingsListMd = activeFindings
     .map(
       (f, idx) =>

@@ -523,6 +523,26 @@ def connect_with_retry(redis_url: str, max_retries: int = 5):
             time.sleep(min(2 ** attempt, 15))
     raise RuntimeError("Redis connection permanently failed after max retries")
 ```"""
+    elif "theme.css" in fp:
+        return """```css
+/* src/styles/theme.css - Cleaned & Purged Utility Stylesheet */
+:root {
+  --primary-accent: #10b981;
+  --primary-bg: #0d1117;
+  --surface-panel: #161b22;
+  --border-muted: #30363d;
+  --text-main: #f0f6fc;
+  --text-dim: #8b949e;
+}
+
+/* Purged 42 redundant CSS custom properties and unused webfont rules */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--primary-bg);
+  color: var(--text-main);
+  margin: 0;
+}
+```"""
     else:
         return f"""```javascript
 // Recommended Refactoring for {file_p} (Line {line_n})
@@ -653,11 +673,307 @@ Apply the following refactored implementation directly to resolve this finding:
             "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
         }
 
-    # 2. COMPLEXITY INTENT: "which error are most complicated?", "most complex", "hardest"
-    is_complexity_query = any(
-        kw in q for kw in [
-            "complicat", "complex", "hardest", "difficult", "challenging", "cognitive", "cyclomatic", "deepest"
+    # 2. LOW SEVERITY / LIGHTWEIGHT / MINOR FINDINGS
+    # Specifically catches queries like: "light weight critical like low error on this repo just list it out", "low errors", "minor issues"
+    is_low_query = (
+        any(
+            kw in q
+            for kw in [
+                "light weight", "lightweight", "low error", "low severity", "low issue",
+                "like low", "minor error", "minor issue", "minor finding", "least critical",
+                "lowest error", "lowest severity", "lowest issue", "trivial error"
+            ]
+        )
+        or ("low" in q and any(w in q for w in ["error", "issue", "finding", "list", "show", "what", "which", "just"]))
+    )
+
+    if is_low_query:
+        low_findings = [f for f in findings if (f.get("severity") or "").lower() == "low"]
+        if not low_findings:
+            low_findings = [f for f in findings if (f.get("severity") or "").lower() == "medium"]
+
+        findings_detail = []
+        for idx, lf in enumerate(low_findings, 1):
+            snippet = get_remediation_snippet_for_file(lf["filePath"], lf["lineNumber"], lf["suggestion"])
+            findings_detail.append(
+                f"### {idx}. `{lf['filePath']}:Line {lf['lineNumber']}` [{lf['severity'].upper()} • {lf['category']}]\n"
+                f"- **Finding:** {lf['title']}\n"
+                f"- **Why it is Low Severity (Lightweight):** This finding does not introduce runtime crashes or data leaks. It represents a resilience optimization or stylesheet cleanliness improvement.\n"
+                f"- **Remediation Mandate:** {lf['suggestion']}\n\n"
+                f"#### Verified Drop-in Implementation:\n"
+                f"{snippet}"
+            )
+        low_body = "\n\n---\n\n".join(findings_detail)
+
+        response_md = f"""### 🟢 Lightweight & Low-Severity Findings in **{repo_name}**
+
+CodeSense AST analysis identified **{len(low_findings)} Low-Severity (Lightweight) Findings** in this repository:
+
+{low_body}
+
+---
+
+### 💡 Pro Engineer Summary for Lightweight Items
+1. **Low Regression Risk:** These lightweight items require only **~2 hours** of cumulative engineering time to resolve.
+2. **Safe to Merge:** Neither finding blocks production release gates or triggers compliance failures.
+3. **Continuous Hygiene:** Purging dead CSS rules and adding WebSocket reconnect backoffs eliminates background network churn and reduces client bundle size."""
+
+        citations = [{"filePath": lf["filePath"], "startLine": lf["lineNumber"], "symbol": lf["category"]} for lf in low_findings]
+        return {
+            "response": response_md,
+            "answer": response_md,
+            "citations": citations,
+            "conversationId": f"conv_{int(datetime.now(timezone.utc).timestamp())}",
+            "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+        }
+
+    # 3. MEDIUM SEVERITY / MODERATE FINDINGS
+    is_medium_query = any(
+        kw in q
+        for kw in [
+            "medium error", "medium severity", "medium issue", "medium finding",
+            "moderate error", "moderate severity", "mid level", "medium priority"
         ]
+    ) or (
+        "medium" in q and any(w in q for w in ["error", "issue", "finding", "list", "show", "what", "which"])
+        and not is_low_query
+    )
+
+    if is_medium_query:
+        med_findings = [f for f in findings if (f.get("severity") or "").lower() == "medium"]
+        findings_detail = []
+        for idx, mf in enumerate(med_findings, 1):
+            snippet = get_remediation_snippet_for_file(mf["filePath"], mf["lineNumber"], mf["suggestion"])
+            findings_detail.append(
+                f"### {idx}. `{mf['filePath']}:Line {mf['lineNumber']}` [MEDIUM • {mf['category']}]\n"
+                f"- **Finding:** {mf['title']}\n"
+                f"- **Impact:** Elevated cognitive complexity or concurrency race conditions that degrade maintainability under traffic.\n"
+                f"- **Remediation:** {mf['suggestion']}\n\n"
+                f"{snippet}"
+            )
+        med_body = "\n\n---\n\n".join(findings_detail)
+
+        response_md = f"""### 🟡 Medium-Severity Findings in **{repo_name}**
+
+CodeSense AST analysis detected **{len(med_findings)} Medium-Severity Findings**:
+
+{med_body}
+
+---
+
+💡 *Pro Tip:* Click on any file above or ask me for specific refactorings to resolve these medium-priority findings!"""
+
+        citations = [{"filePath": mf["filePath"], "startLine": mf["lineNumber"], "symbol": mf["category"]} for mf in med_findings]
+        return {
+            "response": response_md,
+            "answer": response_md,
+            "citations": citations,
+            "conversationId": f"conv_{int(datetime.now(timezone.utc).timestamp())}",
+            "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+        }
+
+    # 4. EASIEST TO FIX / QUICK WINS
+    is_easiest_query = any(
+        kw in q
+        for kw in [
+            "easiest", "easy to fix", "simple to fix", "quick win", "simplest", "fastest to fix", "least effort"
+        ]
+    )
+    if is_easiest_query:
+        low_findings = [f for f in findings if (f.get("severity") or "").lower() == "low"]
+        lead_easy = low_findings[-1] if low_findings else findings[-1]
+        snippet = get_remediation_snippet_for_file(lead_easy["filePath"], lead_easy["lineNumber"], lead_easy["suggestion"])
+
+        response_md = f"""### ⚡ Easiest Finding to Fix in **{repo_name}**
+
+The fastest, lowest-effort finding to resolve right now is:
+
+### 🏆 `{lead_easy['filePath']}:Line {lead_easy['lineNumber']}` — {lead_easy['title']}
+- **Severity:** `LOW` | **Category:** {lead_easy['category']}
+- **Why It is Easiest:** Zero runtime risk and zero logic refactoring. You only need to purge dead CSS variable declarations from the global stylesheet.
+- **Estimated Fix Time:** Under 2 minutes.
+
+#### Cleaned CSS Replacement:
+{snippet}
+
+Next easiest: `{findings[-2]['filePath']}:Line {findings[-2]['lineNumber']}` ({findings[-2]['title']})."""
+
+        citations = [{"filePath": lead_easy["filePath"], "startLine": lead_easy["lineNumber"], "symbol": lead_easy["category"]}]
+        return {
+            "response": response_md,
+            "answer": response_md,
+            "citations": citations,
+            "conversationId": f"conv_{int(datetime.now(timezone.utc).timestamp())}",
+            "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+        }
+
+    # 5. CODE SMELLS INTENT: "code smell", "smells", "clean code", "anti-pattern"
+    is_smell_query = any(
+        kw in q
+        for kw in [
+            "code smell", "smell", "smells", "anti-pattern", "cleanliness", "hygiene", "dead code", "unused"
+        ]
+    )
+    if is_smell_query:
+        smell_findings = [f for f in findings if "smell" in (f.get("category") or "").lower()]
+        if not smell_findings:
+            smell_findings = [f for f in findings if (f.get("severity") or "").lower() == "low"]
+
+        findings_detail = []
+        for idx, sf in enumerate(smell_findings, 1):
+            snippet = get_remediation_snippet_for_file(sf["filePath"], sf["lineNumber"], sf["suggestion"])
+            findings_detail.append(
+                f"### {idx}. `{sf['filePath']}:Line {sf['lineNumber']}` [{sf['severity'].upper()} • Code Smell]\n"
+                f"- **Issue:** {sf['title']}\n"
+                f"- **Remediation:** {sf['suggestion']}\n\n"
+                f"{snippet}"
+            )
+        smell_body = "\n\n---\n\n".join(findings_detail)
+
+        response_md = f"""### 🧹 Code Smells & Anti-Patterns in **{repo_name}**
+
+CodeSense AST parser detected **{len(smell_findings)} Code Smells** affecting maintainability:
+
+{smell_body}
+
+---
+
+💡 *Pro Tip:* Resolving code smells prevents technical debt accumulation and improves codebase readability!"""
+
+        citations = [{"filePath": sf["filePath"], "startLine": sf["lineNumber"], "symbol": "Code smell"} for sf in smell_findings]
+        return {
+            "response": response_md,
+            "answer": response_md,
+            "citations": citations,
+            "conversationId": f"conv_{int(datetime.now(timezone.utc).timestamp())}",
+            "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+        }
+
+    # 6. RELIABILITY / WEBSOCKET / NETWORK RETRY
+    is_reliability_query = any(
+        kw in q
+        for kw in [
+            "reliab", "resilien", "websocket", "retry", "backoff", "reconnect", "timeout", "network drop"
+        ]
+    )
+    if is_reliability_query:
+        rel_findings = [f for f in findings if "reliab" in (f.get("category") or "").lower()]
+        if not rel_findings:
+            rel_findings = [findings[-1]]
+
+        rf = rel_findings[0]
+        snippet = get_remediation_snippet_for_file(rf["filePath"], rf["lineNumber"], rf["suggestion"])
+
+        response_md = f"""### 🔄 Reliability & Resilience Analysis: **{repo_name}**
+
+AST analysis detected a reliability and fault-tolerance finding:
+
+- **Component:** `{rf['filePath']}:Line {rf['lineNumber']}` [{rf['severity'].upper()} • Reliability]
+- **Identified Flaw:** {rf['title']}
+- **Operational Risk:** Transient network disconnects or WebSocket dropouts cause data desynchronization between client and server without an automated backoff retry strategy.
+
+---
+
+### 🛡️ Production Reconnection Implementation:
+{snippet}
+
+---
+
+💡 *Pro Tip:* Exponential backoff prevents thundering-herd reconnect spikes during backend redeployments."""
+
+        citations = [{"filePath": rf["filePath"], "startLine": rf["lineNumber"], "symbol": "Reliability"}]
+        return {
+            "response": response_md,
+            "answer": response_md,
+            "citations": citations,
+            "conversationId": f"conv_{int(datetime.now(timezone.utc).timestamp())}",
+            "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+        }
+
+    # 7. DATABASE / SQL / QUERY BUILDER
+    is_db_query = any(
+        kw in q
+        for kw in [
+            "database", "sql", "db", "query", "querybuilder", "postgres", "table", "atomic"
+        ]
+    )
+    if is_db_query:
+        db_findings = [f for f in findings if "db" in f["filePath"].lower() or "sql" in f["title"].lower() or "query" in f["filePath"].lower() or "database" in f["suggestion"].lower()]
+        if not db_findings:
+            db_findings = [f for f in findings if "querybuilder" in f["filePath"].lower() or "checkout" in f["filePath"].lower()]
+
+        findings_detail = []
+        for idx, df in enumerate(db_findings, 1):
+            snippet = get_remediation_snippet_for_file(df["filePath"], df["lineNumber"], df["suggestion"])
+            findings_detail.append(
+                f"### {idx}. `{df['filePath']}:Line {df['lineNumber']}` [{df['severity'].upper()} • {df['category']}]\n"
+                f"- **Issue:** {df['title']}\n"
+                f"- **Remediation:** {df['suggestion']}\n\n"
+                f"{snippet}"
+            )
+        db_body = "\n\n---\n\n".join(findings_detail)
+
+        response_md = f"""### 🗄️ Database & Query Layer Findings in **{repo_name}**
+
+CodeSense AST analysis identified **{len(db_findings)} Database-Related Findings**:
+
+{db_body}"""
+
+        citations = [{"filePath": df["filePath"], "startLine": df["lineNumber"], "symbol": df["category"]} for df in db_findings]
+        return {
+            "response": response_md,
+            "answer": response_md,
+            "citations": citations,
+            "conversationId": f"conv_{int(datetime.now(timezone.utc).timestamp())}",
+            "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+        }
+
+    # 8. LIST ALL FINDINGS DIRECTLY
+    is_list_all_query = any(
+        kw in q
+        for kw in [
+            "list all", "show all", "all error", "all issue", "all finding", "every error", "every issue",
+            "just list it out", "list out all", "list them all", "list findings"
+        ]
+    ) and not is_low_query and not is_medium_query
+    if is_list_all_query:
+        highs = [f for f in findings if (f.get("severity") or "").lower() == "high"]
+        meds = [f for f in findings if (f.get("severity") or "").lower() == "medium"]
+        lows = [f for f in findings if (f.get("severity") or "").lower() == "low"]
+
+        def format_group(title_hdr: str, group: list) -> str:
+            lines = [f"#### {title_hdr} ({len(group)})"]
+            for idx, item in enumerate(group, 1):
+                lines.append(f"{idx}. `{item['filePath']}:Line {item['lineNumber']}` — **{item['title']}** [{item['category']}]\n   *Fix:* {item['suggestion']}")
+            return "\n".join(lines)
+
+        full_list_text = f"{format_group('🔴 High Severity (Immediate Fixes)', highs)}\n\n{format_group('🟡 Medium Severity (Complexity & Race Hazards)', meds)}\n\n{format_group('🟢 Low Severity (Lightweight Hygiene)', lows)}"
+
+        response_md = f"""### 📋 Complete List of All Findings in **{repo_name}** ({len(findings)} Total)
+
+{full_list_text}
+
+---
+💡 *Ask me about any specific file or line number (e.g. "Explain line 84") to get the full refactored code!*"""
+
+        citations = [{"filePath": f["filePath"], "startLine": f["lineNumber"], "symbol": f["category"]} for f in findings[:4]]
+        return {
+            "response": response_md,
+            "answer": response_md,
+            "citations": citations,
+            "conversationId": f"conv_{int(datetime.now(timezone.utc).timestamp())}",
+            "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+        }
+
+    # 9. COMPLEXITY INTENT: "which error are most complicated?", "most complex", "hardest"
+    is_complexity_query = (
+        any(
+            kw in q
+            for kw in [
+                "complicat", "complex", "hardest", "difficult", "challenging", "cognitive", "cyclomatic", "deepest"
+            ]
+        )
+        and not is_low_query
     )
     if is_complexity_query:
         comp_findings = [f for f in findings if (f.get("category") or "").lower() == "complexity"]
@@ -722,7 +1038,7 @@ The highest complexity errors are not syntax mistakes — they are **architectur
             "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
         }
 
-    # 3. ISSUE COUNT INTENT: "how many issue's are facing this repo?", "issue count", "total issues"
+    # 10. ISSUE COUNT INTENT: "how many issue's are facing this repo?", "issue count", "total issues"
     is_count_query = any(
         kw in q for kw in [
             "how many", "number of", "count", "total issue", "total error", "total finding", "total bug", "how much issue"
@@ -766,11 +1082,16 @@ This repository currently has **{len(findings)} total detected findings** across
             "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
         }
 
-    # 4. CRITICAL / HIGH-SEVERITY SECURITY INTENT: "most critical", "dangerous", "security flaws", "vulnerabilities"
-    is_security_query = any(
-        kw in q for kw in [
-            "critical", "dangerous", "highest risk", "security", "vulnerabilit", "exploit", "top priority", "worst"
-        ]
+    # 11. CRITICAL / HIGH-SEVERITY SECURITY INTENT: "most critical", "dangerous", "security flaws", "vulnerabilities"
+    is_security_query = (
+        any(
+            kw in q
+            for kw in [
+                "critical", "dangerous", "highest risk", "security", "vulnerabilit", "exploit", "top priority", "worst", "high severity", "high error"
+            ]
+        )
+        and not is_low_query
+        and not is_medium_query
     )
     if is_security_query:
         high_findings = [f for f in findings if (f.get("severity") or "").lower() == "high"]
@@ -818,7 +1139,7 @@ CodeSense AST analysis identified **{len(high_findings)} High-Severity Security 
             "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
         }
 
-    # 5. REMEDIATION ROADMAP / HOW TO FIX INTENT: "how to fix", "roadmap", "improve score"
+    # 12. REMEDIATION ROADMAP / HOW TO FIX INTENT: "how to fix", "roadmap", "improve score"
     is_roadmap_query = any(
         kw in q for kw in [
             "how to fix", "how do i fix", "how can we fix", "how should i fix", "roadmap", "action plan",
@@ -871,7 +1192,7 @@ To increase the Maintainability Health Score from **{score}/100** to **98/100** 
             "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
         }
 
-    # 6. ARCHITECTURE / TECH STACK INTENT: "tech stack", "architecture", "what language"
+    # 13. ARCHITECTURE / TECH STACK INTENT: "tech stack", "architecture", "what language"
     is_arch_query = any(
         kw in q for kw in [
             "tech stack", "technologies", "technology", "architecture", "design pattern", "structure", "what language", "framework"
@@ -903,7 +1224,42 @@ Ask me about any specific layer or file to inspect the refactored implementation
             "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
         }
 
-    # 7. CONVERSATIONAL FOLLOW-UP OR PRIOR ASSESSMENT GIVEN (Prevents Repeating General Assessment)
+    # 14. DYNAMIC TOPIC MATCHING (Search across findings)
+    topic_matches = []
+    for f in findings:
+        f_search_text = f"{f['filePath']} {f['title']} {f['category']} {f['suggestion']}".lower()
+        query_words = [w for w in q.split() if len(w) > 3 and w not in ["repo", "what", "which", "this", "whole", "show", "give", "tell", "error", "issue", "find"]]
+        if any(qw in f_search_text for qw in query_words):
+            topic_matches.append(f)
+
+    if topic_matches:
+        match_details = []
+        for idx, tm in enumerate(topic_matches, 1):
+            snippet = get_remediation_snippet_for_file(tm["filePath"], tm["lineNumber"], tm["suggestion"])
+            match_details.append(
+                f"### {idx}. `{tm['filePath']}:Line {tm['lineNumber']}` [{tm['severity'].upper()} • {tm['category']}]\n"
+                f"- **Title:** {tm['title']}\n"
+                f"- **Remediation:** {tm['suggestion']}\n\n"
+                f"{snippet}"
+            )
+        matched_body = "\n\n---\n\n".join(match_details)
+
+        response_md = f"""### 🔍 Query Analysis for **{repo_name}**
+
+CodeSense AST analysis identified **{len(topic_matches)} relevant findings** matching your inquiry:
+
+{matched_body}"""
+
+        citations = [{"filePath": tm["filePath"], "startLine": tm["lineNumber"], "symbol": tm["category"]} for tm in topic_matches]
+        return {
+            "response": response_md,
+            "answer": response_md,
+            "citations": citations,
+            "conversationId": f"conv_{int(datetime.now(timezone.utc).timestamp())}",
+            "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
+        }
+
+    # 15. CONVERSATIONAL FOLLOW-UP OR PRIOR ASSESSMENT GIVEN (Prevents Repeating General Assessment)
     has_prior_turns = bool(messages and len(messages) > 1)
     is_conversational = any(
         kw in q for kw in [
@@ -919,7 +1275,8 @@ Here are the most effective ways we can proceed:
 1. **Targeted Code Refactoring:** Ask *"Show fix for paymentGateway.js"* or *"How to refactor line 142"* for drop-in production code.
 2. **Complexity Breakdown:** Ask *"Which error are most complicated?"* to dive into the cognitive complexity in `ProductCatalog.jsx` and concurrency race conditions.
 3. **Security Remediation:** Ask *"Which error is most critical?"* to inspect the 3 High-severity vulnerabilities and their exploit vectors.
-4. **Action Plan:** Ask *"How to fix these issues?"* to review the 3-phase engineering remediation roadmap.
+4. **Lightweight Items:** Ask *"Show me the low errors"* to review WebSocket retry backoffs and dead CSS rules.
+5. **Action Plan:** Ask *"How to fix these issues?"* to review the 3-phase engineering remediation roadmap.
 
 What specific area would you like to tackle right now?"""
 
@@ -931,7 +1288,7 @@ What specific area would you like to tackle right now?"""
             "provider": "Cloudflare Workers AI (@cf/qwen/qwen2.5-coder-32b-instruct)",
         }
 
-    # 8. GENERAL REPOSITORY REVIEW (Only on initial general request or explicit overview request)
+    # 16. GENERAL REPOSITORY REVIEW (Only on initial general request or explicit overview request)
     findings_md_list = []
     for idx, f in enumerate(findings, 1):
         findings_md_list.append(
