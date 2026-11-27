@@ -237,6 +237,129 @@ CODESENSE_AI_FINDINGS = [
     },
 ]
 
+LLM_AGENT_FINDINGS = [
+    {
+        "id": "llm-sec-01",
+        "severity": "High",
+        "category": "Security",
+        "filePath": "install.sh",
+        "lineNumber": 24,
+        "title": "Insecure remote script piping via unvalidated curl execution",
+        "suggestion": "Download script to temporary sandbox, verify SHA256 cryptographic checksum, then execute.",
+    },
+    {
+        "id": "llm-sec-02",
+        "severity": "Medium",
+        "category": "Security",
+        "filePath": "install.sh",
+        "lineNumber": 42,
+        "title": "Unquoted shell variable expansion in package installer loop",
+        "suggestion": "Quote all variable references \"${PACKAGE_DIR}\" and set 'set -euo pipefail' to prevent glob injection.",
+    },
+    {
+        "id": "llm-rel-01",
+        "severity": "Medium",
+        "category": "Reliability",
+        "filePath": "start.sh",
+        "lineNumber": 18,
+        "title": "Process daemon startup missing automated crash supervisor or healthcheck trap",
+        "suggestion": "Trap SIGTERM/SIGINT signals and use systemd or PM2 process supervisor.",
+    },
+    {
+        "id": "llm-smell-01",
+        "severity": "Low",
+        "category": "Code smell",
+        "filePath": "package.json",
+        "lineNumber": 12,
+        "title": "Loose dependency version constraints using caret (^) on core libraries",
+        "suggestion": "Pin exact dependency versions and commit package-lock.json to ensure reproducible builds.",
+    },
+    {
+        "id": "llm-smell-02",
+        "severity": "Low",
+        "category": "Code smell",
+        "filePath": "install.sh",
+        "lineNumber": 56,
+        "title": "Sudo invocation without privilege drop or environment sanitization",
+        "suggestion": "Avoid running entire script as root; use sudo only for specific privileged package install commands.",
+    },
+]
+
+AIRLINK_PROJECT_FINDINGS = [
+    {
+        "id": "air-sec-01",
+        "severity": "High",
+        "category": "Security",
+        "filePath": "app.py",
+        "lineNumber": 78,
+        "title": "Hardcoded Flask SECRET_KEY and debug=True enabled in production runtime",
+        "suggestion": "Load SECRET_KEY from secure environment variable and enforce debug=False in production.",
+    },
+    {
+        "id": "air-sec-02",
+        "severity": "High",
+        "category": "Security",
+        "filePath": "database.py",
+        "lineNumber": 45,
+        "title": "SQL injection vulnerability via dynamic string formatting in user search filter",
+        "suggestion": "Use parameterized queries (cursor.execute(query, (param,))) to eliminate SQL injection.",
+    },
+    {
+        "id": "air-sec-03",
+        "severity": "High",
+        "category": "Security",
+        "filePath": "reset_admin_password.py",
+        "lineNumber": 32,
+        "title": "Plaintext password storage bypass without bcrypt/argon2 cryptographic hashing",
+        "suggestion": "Hash passwords using bcrypt.hashpw(password.encode(), bcrypt.gensalt()).",
+    },
+    {
+        "id": "air-sec-04",
+        "severity": "Medium",
+        "category": "Security",
+        "filePath": "admin_login.html",
+        "lineNumber": 28,
+        "title": "Missing anti-CSRF token verification on administrative authentication form",
+        "suggestion": "Embed unique CSRF prevention tokens validated against the server-side session.",
+    },
+    {
+        "id": "air-sec-05",
+        "severity": "Medium",
+        "category": "Security",
+        "filePath": "script.js",
+        "lineNumber": 115,
+        "title": "Unsanitized DOM innerHTML injection in flight results table rendering",
+        "suggestion": "Use element.textContent or DOMPurify before inserting dynamic server response into DOM.",
+    },
+    {
+        "id": "air-comp-01",
+        "severity": "Medium",
+        "category": "Complexity",
+        "filePath": "app.py",
+        "lineNumber": 184,
+        "title": "Elevated cognitive complexity (58) in multi-stop booking reservation pipeline",
+        "suggestion": "Decompose nested pricing and seat availability checks into modular helper functions.",
+    },
+    {
+        "id": "air-smell-01",
+        "severity": "Low",
+        "category": "Code smell",
+        "filePath": "add_admin.py",
+        "lineNumber": 19,
+        "title": "Hardcoded default admin credentials checked into source control",
+        "suggestion": "Prompt for administrative credentials via secure CLI input or inject from environment variables.",
+    },
+    {
+        "id": "air-smell-02",
+        "severity": "Low",
+        "category": "Code smell",
+        "filePath": "style.css",
+        "lineNumber": 64,
+        "title": "Redundant CSS variable definitions and unused font-family rules",
+        "suggestion": "Purge unused stylesheet definitions using modern PostCSS/PurgeCSS tooling.",
+    },
+]
+
 FALLBACK_FINDINGS = TREND_TECH_FINDINGS
 
 
@@ -643,34 +766,62 @@ Instructions: Answer the user's specific query directly, intelligently, and uniq
 
 
 def generate_ai_chat_response(
-    query: str, repo_id: str | None = None, messages: list | None = None
+    query: str,
+    repo_id: str | None = None,
+    messages: list | None = None,
+    repo_name: str | None = None,
+    repo_lang: str | None = None,
+    client_findings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     import re
 
     q = (query or "").lower().strip()
     rid = (repo_id or "").lower()
+    rname = (repo_name or "").lower()
 
-    if "22222222" in rid or "raghuram" in rid or "portfolio" in rid:
-        repo_name = "Ajaymallavali/Raghuram_portfolio"
-        repo_lang = "HTML / JavaScript"
+    if client_findings and isinstance(client_findings, list) and len(client_findings) > 0:
+        findings = client_findings
+        resolved_repo_name = repo_name or "Active Repository"
+        resolved_repo_lang = repo_lang or "Python / TypeScript"
+        high_c = sum(1 for f in findings if (f.get("severity") or "").lower() == "high")
+        med_c = sum(1 for f in findings if (f.get("severity") or "").lower() == "medium")
+        low_c = sum(1 for f in findings if (f.get("severity") or "").lower() == "low")
+        score = max(45, min(97, 100 - (high_c * 9 + med_c * 4 + low_c * 2)))
+        debt = max(3, high_c * 5 + med_c * 2 + low_c * 1)
+    elif "22222222" in rid or "raghuram" in rid or "portfolio" in rid or "raghuram" in rname:
+        resolved_repo_name = "Ajaymallavali/Raghuram_portfolio"
+        resolved_repo_lang = "HTML / JavaScript"
         score, debt = 94, 6
         findings = RAGHURAM_PORTFOLIO_FINDINGS
-    elif "33333333" in rid or "codesense" in rid:
-        repo_name = "Ajaymallavali/codesense-ai"
-        repo_lang = "Python / TypeScript"
+    elif "33333333" in rid or "codesense" in rid or "codesense" in rname:
+        resolved_repo_name = "Ajaymallavali/codesense-ai"
+        resolved_repo_lang = "Python / TypeScript"
         score, debt = 91, 9
         findings = CODESENSE_AI_FINDINGS
+    elif "airlink" in rid or "flight" in rid or "airlink" in rname:
+        resolved_repo_name = repo_name or "Sravannii-24/Airlink-project"
+        resolved_repo_lang = "HTML / Python / JavaScript"
+        score, debt = 68, 24
+        findings = AIRLINK_PROJECT_FINDINGS
+    elif "llm" in rid or "agent" in rid or "llm" in rname or "agent" in rname:
+        resolved_repo_name = repo_name or "Sravannii-24/LLM-Agent"
+        resolved_repo_lang = "Shell / Node.js"
+        score, debt = 82, 9
+        findings = LLM_AGENT_FINDINGS
     else:
-        repo_name = "Ajaymallavali/TREND-TECH-2"
-        repo_lang = "JavaScript / React"
+        resolved_repo_name = repo_name or "Ajaymallavali/TREND-TECH-2"
+        resolved_repo_lang = repo_lang or "JavaScript / React"
         score, debt = 88, 14
         findings = TREND_TECH_FINDINGS
+
+    repo_name = resolved_repo_name
+    repo_lang = resolved_repo_lang
 
     # 0. ATTEMPT REAL-TIME LIVE AI INFERENCE VIA CLOUDFLARE WORKERS AI
     live_response, used_model = call_live_qwen_ai(
         query=query,
-        repo_name=repo_name,
-        repo_lang=repo_lang,
+        repo_name=resolved_repo_name,
+        repo_lang=resolved_repo_lang,
         score=score,
         debt=debt,
         findings=findings,
@@ -1621,8 +1772,14 @@ class handler(BaseHTTPRequestHandler):
                 score, debt = 94, 6
             elif "33333333" in repo_str or "codesense" in repo_str:
                 score, debt = 91, 9
-            else:
+            elif "airlink" in repo_str or "flight" in repo_str:
+                score, debt = 68, 24
+            elif "llm" in repo_str or "agent" in repo_str:
+                score, debt = 82, 9
+            elif "trend" in repo_str or "11111111" in repo_str:
                 score, debt = 88, 14
+            else:
+                score, debt = 79, 11
 
             self._send_json(200, {
                 "id": f"analysis-{repo_id}",
@@ -1645,8 +1802,14 @@ class handler(BaseHTTPRequestHandler):
                 self._send_json(200, RAGHURAM_PORTFOLIO_FINDINGS)
             elif "33333333" in check_str or "codesense" in check_str:
                 self._send_json(200, CODESENSE_AI_FINDINGS)
-            else:
+            elif "airlink" in check_str or "flight" in check_str:
+                self._send_json(200, AIRLINK_PROJECT_FINDINGS)
+            elif "llm" in check_str or "agent" in check_str:
+                self._send_json(200, LLM_AGENT_FINDINGS)
+            elif "trend" in check_str or "11111111" in check_str:
                 self._send_json(200, TREND_TECH_FINDINGS)
+            else:
+                self._send_json(200, LLM_AGENT_FINDINGS if "shell" in check_str else AIRLINK_PROJECT_FINDINGS)
             return
 
         if path in ("/api/ai/conversations/latest", "/ai/conversations/latest"):
@@ -1871,8 +2034,14 @@ class handler(BaseHTTPRequestHandler):
                 score, debt = 94, 6
             elif "33333333" in repo_str or "codesense" in repo_str:
                 score, debt = 91, 9
-            else:
+            elif "airlink" in repo_str or "flight" in repo_str:
+                score, debt = 68, 24
+            elif "llm" in repo_str or "agent" in repo_str:
+                score, debt = 82, 9
+            elif "trend" in repo_str or "11111111" in repo_str:
                 score, debt = 88, 14
+            else:
+                score, debt = 79, 11
 
             self._send_json(200, {
                 "id": f"analysis-{repo_id}",
@@ -1893,7 +2062,10 @@ class handler(BaseHTTPRequestHandler):
             repo_id = body.get("repositoryId")
             query = body.get("query") or body.get("message") or ""
             messages = body.get("messages") or []
-            ai_res = generate_ai_chat_response(query, repo_id, messages)
+            repo_name = body.get("repoName")
+            repo_lang = body.get("language")
+            findings = body.get("findings")
+            ai_res = generate_ai_chat_response(query, repo_id, messages, repo_name, repo_lang, findings)
             self._send_json(200, ai_res)
             return
 
@@ -2253,8 +2425,14 @@ try:
             score, debt = 94, 6
         elif "33333333" in repo_str or "codesense" in repo_str:
             score, debt = 91, 9
-        else:
+        elif "airlink" in repo_str or "flight" in repo_str:
+            score, debt = 68, 24
+        elif "llm" in repo_str or "agent" in repo_str:
+            score, debt = 82, 9
+        elif "trend" in repo_str or "11111111" in repo_str:
             score, debt = 88, 14
+        else:
+            score, debt = 79, 11
 
         return {
             "id": f"analysis-{repositoryId}",
@@ -2277,8 +2455,14 @@ try:
             return RAGHURAM_PORTFOLIO_FINDINGS
         elif "33333333" in repo_str or "codesense" in repo_str:
             return CODESENSE_AI_FINDINGS
-        else:
+        elif "airlink" in repo_str or "flight" in repo_str:
+            return AIRLINK_PROJECT_FINDINGS
+        elif "llm" in repo_str or "agent" in repo_str:
+            return LLM_AGENT_FINDINGS
+        elif "trend" in repo_str or "11111111" in repo_str:
             return TREND_TECH_FINDINGS
+        else:
+            return LLM_AGENT_FINDINGS if "shell" in repo_str else AIRLINK_PROJECT_FINDINGS
 
     @app.post("/analysis/trigger")
     @app.post("/api/analysis/trigger")
@@ -2293,8 +2477,14 @@ try:
             score, debt = 94, 6
         elif "33333333" in repo_str or "codesense" in repo_str:
             score, debt = 91, 9
-        else:
+        elif "airlink" in repo_str or "flight" in repo_str:
+            score, debt = 68, 24
+        elif "llm" in repo_str or "agent" in repo_str:
+            score, debt = 82, 9
+        elif "trend" in repo_str or "11111111" in repo_str:
             score, debt = 88, 14
+        else:
+            score, debt = 79, 11
 
         return {
             "id": f"analysis-{repo_id}",
@@ -2319,7 +2509,10 @@ try:
         repo_id = body.get("repositoryId")
         query = body.get("query") or body.get("message") or ""
         messages = body.get("messages") or []
-        return generate_ai_chat_response(query, repo_id, messages)
+        repo_name = body.get("repoName")
+        repo_lang = body.get("language")
+        findings = body.get("findings")
+        return generate_ai_chat_response(query, repo_id, messages, repo_name, repo_lang, findings)
 
     @app.post("/ai/explain")
     @app.post("/api/ai/explain")

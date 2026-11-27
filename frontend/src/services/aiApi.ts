@@ -290,6 +290,134 @@ body {
   margin: 0;
 }`;
   }
+  if (fp.includes("install.sh")) {
+    return `#!/usr/bin/env bash
+# install.sh - Secure & Defensively Guarded Package Installer
+set -euo pipefail
+IFS=$'\n\t'
+
+TMP_DIR="$(mktemp -d -t codesense_pkg_XXXXXX)"
+trap 'rm -rf "\${TMP_DIR}"' EXIT
+
+EXPECTED_SHA256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+echo "Downloading verified release package to sandbox: \${TMP_DIR}..."
+curl -fsSL "https://releases.example.com/package.tar.gz" -o "\${TMP_DIR}/package.tar.gz"
+
+echo "Verifying SHA256 cryptographic signature..."
+echo "\${EXPECTED_SHA256}  \${TMP_DIR}/package.tar.gz" | sha256sum -c -
+
+echo "Extracting release payload into target prefix..."
+tar -xzf "\${TMP_DIR}/package.tar.gz" -C "/opt/app"
+echo "Installation completed safely with zero unvalidated execution."`;
+  }
+  if (fp.includes("start.sh")) {
+    return `#!/usr/bin/env bash
+# start.sh - Supervised Daemon Startup with Process Traps
+set -euo pipefail
+
+PID_FILE="/run/llm-agent.pid"
+
+cleanup() {
+  echo "Intercepted termination signal. Stopping daemon PID \$(cat \${PID_FILE} 2>/dev/null)..."
+  if [ -f "\${PID_FILE}" ]; then
+    kill -TERM "\$(cat \${PID_FILE})" 2>/dev/null || true
+    rm -f "\${PID_FILE}"
+  fi
+  exit 0
+}
+
+trap cleanup SIGINT SIGTERM EXIT
+
+echo "Starting LLM Agent core daemon under PID supervisor..."
+node ./dist/index.js &
+DAEMON_PID=$!
+echo "\${DAEMON_PID}" > "\${PID_FILE}"
+
+wait "\${DAEMON_PID}"`;
+  }
+  if (fp.includes("database.py") || (fp.includes("db") && fp.endsWith(".py"))) {
+    return `# database.py - Parameterized Database Query Execution
+import sqlite3
+from typing import List, Dict, Any
+
+def search_users(cursor: sqlite3.Cursor, search_term: str) -> List[Dict[str, Any]]:
+    # Parameterized query markers eliminate dynamic string concatenation SQL injection
+    query = """
+        SELECT id, username, email, role, created_at 
+        FROM users 
+        WHERE username LIKE ? OR email LIKE ? 
+        ORDER BY created_at DESC 
+        LIMIT 50
+    """
+    pattern = f"%{search_term}%"
+    cursor.execute(query, (pattern, pattern))
+    columns = [desc[0] for desc in cursor.description]
+    return [dict(zip(columns, row)) for row in cursor.fetchall()]`;
+  }
+  if (fp.includes("reset_admin_password.py")) {
+    return `# reset_admin_password.py - Cryptographic Password Hashing via bcrypt
+import bcrypt
+import sqlite3
+
+def secure_update_admin_password(conn: sqlite3.Connection, admin_email: str, raw_password: str) -> bool:
+    if len(raw_password) < 12:
+        raise ValueError("Administrative password must contain at least 12 characters.")
+    
+    # Generate random salt and hash password using bcrypt
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw(raw_password.encode('utf-8'), salt)
+    
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET password_hash = ?, password_updated_at = datetime('now') WHERE email = ? AND is_admin = 1",
+        (hashed.decode('utf-8'), admin_email)
+    )
+    conn.commit()
+    return cursor.rowcount > 0`;
+  }
+  if (fp.includes("admin_login.html")) {
+    return `<!-- admin_login.html - Anti-CSRF Protected Admin Form -->
+<form method="POST" action="/admin/login" class="login-form">
+  <!-- Dynamic server-issued CSRF token validates state across sessions -->
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  
+  <div class="form-group">
+    <label for="admin_email">Admin Email</label>
+    <input type="email" id="admin_email" name="email" required autocomplete="username" />
+  </div>
+  
+  <div class="form-group">
+    <label for="admin_pwd">Password</label>
+    <input type="password" id="admin_pwd" name="password" required autocomplete="current-password" />
+  </div>
+  
+  <button type="submit" class="btn btn-primary">Authenticate as Administrator</button>
+</form>`;
+  }
+  if (fp.includes("app.py")) {
+    return `# app.py - Environment-Driven Secrets & Secure Production Settings
+import os
+from flask import Flask
+
+app = Flask(__name__)
+
+# Enforce dynamic secret key injection from secure environment
+secret_key = os.environ.get("FLASK_SECRET_KEY")
+if not secret_key or len(secret_key) < 32:
+    if os.environ.get("FLASK_ENV") == "production":
+        raise RuntimeError("Production runtime requires high-entropy FLASK_SECRET_KEY in environment!")
+    secret_key = "development-only-temporary-fallback-secret-key"
+
+app.config["SECRET_KEY"] = secret_key
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+if __name__ == "__main__":
+    is_debug = os.environ.get("FLASK_DEBUG", "0").lower() in ("1", "true")
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=is_debug)`;
+  }
   return `// Recommended Refactoring for ${f.filePath} (Line ${f.lineNumber || 1})
 // Remediation: ${f.suggestion}
 // Applied directly via CodeSense AI Qwen 2.5-Coder Engine`;
@@ -1199,6 +1327,9 @@ export const aiApi = {
           query,
           conversationId,
           messages,
+          repoName: repo?.fullName || repo?.name,
+          language: repo?.language,
+          findings: findingsList,
         }),
       });
       if (res && typeof res === "object" && (res.response || res.answer)) {

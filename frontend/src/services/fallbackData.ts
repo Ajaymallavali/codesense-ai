@@ -236,9 +236,205 @@ export const CODESENSE_AI_FINDINGS: Finding[] = [
   },
 ];
 
+export const LLM_AGENT_FINDINGS: Finding[] = [
+  {
+    id: "llm-sec-01",
+    severity: "High",
+    category: "Security",
+    filePath: "install.sh",
+    lineNumber: 24,
+    title: "Insecure remote script piping via unvalidated curl execution",
+    suggestion: "Download script to temporary sandbox, verify SHA256 cryptographic checksum, then execute.",
+  },
+  {
+    id: "llm-sec-02",
+    severity: "Medium",
+    category: "Security",
+    filePath: "install.sh",
+    lineNumber: 42,
+    title: "Unquoted shell variable expansion in package installer loop",
+    suggestion: "Quote all variable references \"${PACKAGE_DIR}\" and set 'set -euo pipefail' to prevent glob injection.",
+  },
+  {
+    id: "llm-rel-01",
+    severity: "Medium",
+    category: "Reliability",
+    filePath: "start.sh",
+    lineNumber: 18,
+    title: "Process daemon startup missing automated crash supervisor or healthcheck trap",
+    suggestion: "Trap SIGTERM/SIGINT signals and use systemd or PM2 process supervisor.",
+  },
+  {
+    id: "llm-smell-01",
+    severity: "Low",
+    category: "Code smell",
+    filePath: "package.json",
+    lineNumber: 12,
+    title: "Loose dependency version constraints using caret (^) on core libraries",
+    suggestion: "Pin exact dependency versions and commit package-lock.json to ensure reproducible builds.",
+  },
+  {
+    id: "llm-smell-02",
+    severity: "Low",
+    category: "Code smell",
+    filePath: "install.sh",
+    lineNumber: 56,
+    title: "Sudo invocation without privilege drop or environment sanitization",
+    suggestion: "Avoid running entire script as root; use sudo only for specific privileged package install commands.",
+  },
+];
+
+export const AIRLINK_PROJECT_FINDINGS: Finding[] = [
+  {
+    id: "air-sec-01",
+    severity: "High",
+    category: "Security",
+    filePath: "app.py",
+    lineNumber: 78,
+    title: "Hardcoded Flask SECRET_KEY and debug=True enabled in production runtime",
+    suggestion: "Load SECRET_KEY from secure environment variable and enforce debug=False in production.",
+  },
+  {
+    id: "air-sec-02",
+    severity: "High",
+    category: "Security",
+    filePath: "database.py",
+    lineNumber: 45,
+    title: "SQL injection vulnerability via dynamic string formatting in user search filter",
+    suggestion: "Use parameterized queries (cursor.execute(query, (param,))) to eliminate SQL injection.",
+  },
+  {
+    id: "air-sec-03",
+    severity: "High",
+    category: "Security",
+    filePath: "reset_admin_password.py",
+    lineNumber: 32,
+    title: "Plaintext password storage bypass without bcrypt/argon2 cryptographic hashing",
+    suggestion: "Hash passwords using bcrypt.hashpw(password.encode(), bcrypt.gensalt()).",
+  },
+  {
+    id: "air-sec-04",
+    severity: "Medium",
+    category: "Security",
+    filePath: "admin_login.html",
+    lineNumber: 28,
+    title: "Missing anti-CSRF token verification on administrative authentication form",
+    suggestion: "Embed unique CSRF prevention tokens validated against the server-side session.",
+  },
+  {
+    id: "air-sec-05",
+    severity: "Medium",
+    category: "Security",
+    filePath: "script.js",
+    lineNumber: 115,
+    title: "Unsanitized DOM innerHTML injection in flight results table rendering",
+    suggestion: "Use element.textContent or DOMPurify before inserting dynamic server response into DOM.",
+  },
+  {
+    id: "air-comp-01",
+    severity: "Medium",
+    category: "Complexity",
+    filePath: "app.py",
+    lineNumber: 184,
+    title: "Elevated cognitive complexity (58) in multi-stop booking reservation pipeline",
+    suggestion: "Decompose nested pricing and seat availability checks into modular helper functions.",
+  },
+  {
+    id: "air-smell-01",
+    severity: "Low",
+    category: "Code smell",
+    filePath: "add_admin.py",
+    lineNumber: 19,
+    title: "Hardcoded default admin credentials checked into source control",
+    suggestion: "Prompt for administrative credentials via secure CLI input or inject from environment variables.",
+  },
+  {
+    id: "air-smell-02",
+    severity: "Low",
+    category: "Code smell",
+    filePath: "style.css",
+    lineNumber: 64,
+    title: "Redundant CSS variable definitions and unused font-family rules",
+    suggestion: "Purge unused stylesheet definitions using modern PostCSS/PurgeCSS tooling.",
+  },
+];
+
 export function generateFindingsForCustomRepo(repo: Repository): Finding[] {
   const name = repo.name || "repository";
   const lang = (repo.language || "TypeScript").toLowerCase();
+
+  if (lang.includes("shell") || lang.includes("bash")) {
+    return [
+      {
+        id: `f-${name}-01`,
+        severity: "High",
+        category: "Security",
+        filePath: "scripts/deploy.sh",
+        lineNumber: 19,
+        title: "Insecure remote script piping without cryptographic checksum validation",
+        suggestion: "Verify SHA256 checksums before piping remote downloads to bash interpreter.",
+      },
+      {
+        id: `f-${name}-02`,
+        severity: "Medium",
+        category: "Security",
+        filePath: "scripts/setup.sh",
+        lineNumber: 34,
+        title: "Unquoted shell variable reference in directory traversal loop",
+        suggestion: "Wrap shell variables in double quotes to prevent word splitting and glob expansion.",
+      },
+      {
+        id: `f-${name}-03`,
+        severity: "Medium",
+        category: "Reliability",
+        filePath: "run.sh",
+        lineNumber: 12,
+        title: "Script execution missing 'set -euo pipefail' strict defensive flags",
+        suggestion: "Add 'set -euo pipefail' at script head to ensure immediate failure on unhandled errors.",
+      },
+      {
+        id: `f-${name}-04`,
+        severity: "Low",
+        category: "Code smell",
+        filePath: "scripts/env.sh",
+        lineNumber: 22,
+        title: "Exported environment variables without default fallback fallback values",
+        suggestion: "Use '${VAR:-default}' syntax to safeguard against unbound variable aborts.",
+      },
+    ];
+  }
+
+  if (lang.includes("html") || lang.includes("css")) {
+    return [
+      {
+        id: `f-${name}-01`,
+        severity: "High",
+        category: "Security",
+        filePath: "public/index.html",
+        lineNumber: 48,
+        title: "Form submission lacks anti-CSRF defense tokens and strict same-site cookies",
+        suggestion: "Add CSRF protection tokens and configure SameSite=Strict on session cookies.",
+      },
+      {
+        id: `f-${name}-02`,
+        severity: "Medium",
+        category: "Security",
+        filePath: "public/js/main.js",
+        lineNumber: 82,
+        title: "Potential DOM Cross-Site Scripting (XSS) via unescaped innerHTML manipulation",
+        suggestion: "Use textContent or DOMPurify.sanitize() when injecting dynamic strings into DOM elements.",
+      },
+      {
+        id: `f-${name}-03`,
+        severity: "Low",
+        category: "Code smell",
+        filePath: "public/css/style.css",
+        lineNumber: 55,
+        title: "Render-blocking font stylesheet import waterfall delays First Contentful Paint",
+        suggestion: "Preload web fonts using <link rel='preload'> and font-display: swap.",
+      },
+    ];
+  }
 
   if (lang.includes("python")) {
     return [
@@ -353,6 +549,12 @@ export function getRepositoryFindings(repo?: Repository | null): Finding[] {
   if (name.includes("codesense") || fullName.includes("codesense")) {
     return CODESENSE_AI_FINDINGS;
   }
+  if (name.includes("airlink") || fullName.includes("airlink") || name.includes("flight") || fullName.includes("flight")) {
+    return AIRLINK_PROJECT_FINDINGS;
+  }
+  if (name.includes("llm") || fullName.includes("llm") || name.includes("agent") || fullName.includes("agent")) {
+    return LLM_AGENT_FINDINGS;
+  }
 
   return generateFindingsForCustomRepo(repo);
 }
@@ -361,23 +563,32 @@ export function getRepositoryAnalysis(repo?: Repository | null): Analysis {
   const findings = getRepositoryFindings(repo);
   const repoId = repo?.id || "11111111-1111-1111-1111-111111111111";
   const name = (repo?.name || "").toLowerCase();
+  const fullName = (repo?.fullName || "").toLowerCase();
 
   let maintainabilityScore = 88;
   let technicalDebtHours = 14;
 
-  if (name.includes("raghuram") || name.includes("portfolio")) {
+  if (name.includes("raghuram") || fullName.includes("raghuram") || name.includes("portfolio")) {
     maintainabilityScore = 94;
     technicalDebtHours = 6;
-  } else if (name.includes("codesense")) {
+  } else if (name.includes("codesense") || fullName.includes("codesense")) {
     maintainabilityScore = 91;
     technicalDebtHours = 9;
-  } else if (name.includes("trend")) {
+  } else if (name.includes("airlink") || fullName.includes("airlink") || name.includes("flight")) {
+    maintainabilityScore = 68;
+    technicalDebtHours = 24;
+  } else if (name.includes("llm") || fullName.includes("llm") || name.includes("agent")) {
+    maintainabilityScore = 82;
+    technicalDebtHours = 9;
+  } else if (name.includes("trend") || fullName.includes("trend")) {
     maintainabilityScore = 88;
     technicalDebtHours = 14;
   } else {
     const highSec = findings.filter((f) => (f.severity || "").toLowerCase() === "high").length;
-    maintainabilityScore = Math.max(70, 96 - findings.length * 3 - highSec * 4);
-    technicalDebtHours = Math.max(2, findings.length * 2 + highSec * 3);
+    const medSec = findings.filter((f) => (f.severity || "").toLowerCase() === "medium").length;
+    const lowSec = findings.filter((f) => (f.severity || "").toLowerCase() === "low").length;
+    maintainabilityScore = Math.max(45, Math.min(97, 100 - (highSec * 9 + medSec * 4 + lowSec * 2)));
+    technicalDebtHours = Math.max(3, highSec * 5 + medSec * 2 + lowSec * 1);
   }
 
   return {
